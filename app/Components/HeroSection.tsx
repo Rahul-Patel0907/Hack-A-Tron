@@ -1,7 +1,35 @@
-import { Play, UploadCloud, Users, Sparkles, ShieldCheck, FileText, Video as VideoIcon } from 'lucide-react';
+'use client'
+import { useState } from 'react';
+import { Play, UploadCloud, Sparkles, FileText, X, Cpu, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
+const DEMO_STEPS = [
+    {
+        id: 'upload',
+        title: '1. Upload Video',
+        description: 'Drag and drop your meeting recording into our clean, intuitive upload interface.',
+        icon: UploadCloud,
+        image: '/demo/upload.png'
+    },
+    {
+        id: 'process',
+        title: '2. AI Processing',
+        description: 'Our AI engine instantly transcribes the audio and begins generating summaries.',
+        icon: Cpu,
+        image: '/demo/uploading.png'
+    },
+    {
+        id: 'insights',
+        title: '3. Get Insights',
+        description: 'Review English & Hinglish summaries, read the transcript, and export them directly.',
+        icon: Sparkles,
+        image: '/demo/insights.png'
+    }
+];
+
 export default function HeroSection() {
+    const [showDemo, setShowDemo] = useState(false);
+    const [activeStep, setActiveStep] = useState(0);
     return (
         <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 px-6">
             <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 lg:gap-8 items-center">
@@ -28,7 +56,10 @@ export default function HeroSection() {
                                 <FileText className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
                                 Start Transcribing
                             </Link>
-                            <button className="flex items-center gap-2 px-8 py-4 rounded-full glass hover:bg-white/10 text-white font-medium text-lg transition-all border border-white/10">
+                            <button
+                                onClick={() => setShowDemo(true)}
+                                className="flex items-center gap-2 px-8 py-4 rounded-full glass hover:bg-white/10 text-white font-medium text-lg transition-all border border-white/10"
+                            >
                                 <Play className="w-5 h-5" />
                                 Watch Demo
                             </button>
@@ -134,6 +165,106 @@ export default function HeroSection() {
                 </div>
 
             </div>
+
+            {/* Interactive Demo Modal */}
+            {showDemo && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+                    <div className="relative w-full max-w-6xl h-[85vh] bg-gray-900 border border-white/10 rounded-3xl shadow-2xl overflow-hidden shadow-blue-500/20 flex flex-col md:flex-row">
+
+                        {/* Close button */}
+                        <button
+                            onClick={() => setShowDemo(false)}
+                            className="absolute top-4 right-4 z-20 p-2 bg-black/50 hover:bg-black/80 rounded-full text-white transition-colors border border-white/20"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        {/* Left: Tabs Navigation */}
+                        <div className="md:w-1/3 bg-gray-950 p-6 md:p-8 flex flex-col justify-center border-b md:border-b-0 md:border-r border-white/5 z-10 relative">
+                            <div className="mb-8">
+                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 w-fit mb-4">
+                                    <Play className="w-3 h-3 text-blue-400" />
+                                    <span className="text-xs font-medium text-blue-300">Interactive Tour</span>
+                                </div>
+                                <h2 className="text-3xl font-bold text-white mb-2">How it works</h2>
+                                <p className="text-gray-400 text-sm">See how MeetMiner transforms your meetings into actionable insights in seconds.</p>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                {DEMO_STEPS.map((step, index) => {
+                                    const isActive = activeStep === index;
+                                    const Icon = step.icon;
+                                    return (
+                                        <button
+                                            key={step.id}
+                                            onClick={() => setActiveStep(index)}
+                                            className={`flex items-start gap-4 p-4 rounded-xl text-left transition-all duration-300 border ${isActive
+                                                ? 'bg-blue-600/10 border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.1)]'
+                                                : 'bg-white/5 border-transparent hover:bg-white/10'
+                                                }`}
+                                        >
+                                            <div className={`p-2 rounded-lg shrink-0 ${isActive ? 'bg-blue-500 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                                                <Icon className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className={`font-semibold text-sm mb-1 ${isActive ? 'text-blue-400' : 'text-gray-200'}`}>
+                                                    {step.title}
+                                                </h3>
+                                                <p className="text-xs text-gray-500 leading-relaxed">
+                                                    {step.description}
+                                                </p>
+                                            </div>
+                                            {isActive && (
+                                                <ChevronRight className="w-4 h-4 text-blue-500 ml-auto self-center animate-pulse" />
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="mt-8 pt-6 border-t border-white/5">
+                                <Link
+                                    href="/upload"
+                                    onClick={() => setShowDemo(false)}
+                                    className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition-all"
+                                >
+                                    Try it yourself <ChevronRight className="w-4 h-4" />
+                                </Link>
+                            </div>
+                        </div>
+
+                        {/* Right: Image Display */}
+                        <div className="md:w-2/3 relative bg-black flex items-center justify-center p-4 md:p-8 overflow-hidden">
+                            {/* Subtle background glow based on active step */}
+                            <div className="absolute inset-0 opacity-20 transition-colors duration-700"
+                                style={{
+                                    background: `radial-gradient(circle at center, ${activeStep === 0 ? '#3b82f6' : activeStep === 1 ? '#8b5cf6' : '#10b981'}, transparent 70%)`
+                                }}
+                            />
+
+                            {DEMO_STEPS.map((step, index) => (
+                                <div
+                                    key={step.id}
+                                    className={`absolute inset-0 p-4 sm:p-8 md:p-12 flex items-center justify-center transition-all duration-500 ease-in-out ${activeStep === index
+                                        ? 'opacity-100 scale-100 translate-y-0'
+                                        : 'opacity-0 scale-95 translate-y-8 pointer-events-none'
+                                        }`}
+                                >
+                                    <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-white/10 shadow-2xl bg-gray-900 group">
+                                        <img
+                                            src={step.image}
+                                            alt={step.title}
+                                            className="w-full h-full object-cover sm:object-contain transition-transform duration-700 group-hover:scale-[1.02]"
+                                        />
+                                        <div className="absolute inset-0 ring-1 ring-inset ring-white/10 rounded-xl pointer-events-none"></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                    </div>
+                </div>
+            )}
         </section>
     );
 }
