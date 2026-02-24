@@ -1,0 +1,484 @@
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Play, Copy, Download, ChevronDown, MessageSquare, ListTree, AlignLeft, Settings, Sparkles, Check, X } from 'lucide-react';
+import Link from 'next/link';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { saveAs } from 'file-saver';
+
+export default function InsightsPage() {
+    const [summaryLang, setSummaryLang] = useState<'EN' | 'HI' | 'SPEAKER'>('EN');
+    const [speakerLang, setSpeakerLang] = useState<'E' | 'H'>('E');
+    const [transcriptData, setTranscriptData] = useState<{ speaker: string; text: string; start?: number; end?: number }[]>([]);
+    const [chaptersData, setChaptersData] = useState<{ headline: string; summary: string; start: number; end: number }[]>([]);
+    const [summaryData, setSummaryData] = useState<string>('');
+    const [summaryDataHi, setSummaryDataHi] = useState<string>('');
+    const [summaryDataSpeakers, setSummaryDataSpeakers] = useState<string>('');
+    const [summaryDataSpeakersHi, setSummaryDataSpeakersHi] = useState<string>('');
+    const [videoUrl, setVideoUrl] = useState<string>('');
+    const [videoName, setVideoName] = useState<string>('Meeting Recording.mp4');
+    const [isLoading, setIsLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<'transcript' | 'chapters'>('transcript');
+    const [copied, setCopied] = useState(false);
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    const [nameMap, setNameMap] = useState<Record<string, string>>({});
+
+    const handleComingSoon = () => alert("This feature will be available in V2!");
+
+    const handleDownloadTxt = () => {
+        let textStr = '';
+        let filename = '';
+        if (activeTab === 'transcript') {
+            if (!transcriptData.length) return;
+            textStr = transcriptData.map(t => `${t.speaker} [${formatTime(t.start)}]: ${t.text}`).join('\n\n');
+            filename = videoName.replace(/\.[^/.]+$/, "") + "_transcript.txt";
+        } else {
+            if (!chaptersData.length) return;
+            textStr = chaptersData.map(c => `${c.headline} [${formatTime(c.start)}]\n${c.summary}`).join('\n\n');
+            filename = videoName.replace(/\.[^/.]+$/, "") + "_chapters.txt";
+        }
+        const blob = new Blob([textStr], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleDownloadDocx = async () => {
+        let children: any[] = [];
+        let filename = '';
+
+        if (activeTab === 'transcript') {
+            if (!transcriptData.length) return;
+            children = transcriptData.map(t => new Paragraph({
+                children: [
+                    new TextRun({ text: `${t.speaker} [${formatTime(t.start)}]: `, bold: true }),
+                    new TextRun({ text: t.text })
+                ]
+            }));
+            filename = videoName.replace(/\.[^/.]+$/, "") + "_transcript.docx";
+        } else {
+            if (!chaptersData.length) return;
+            chaptersData.forEach(c => {
+                children.push(new Paragraph({
+                    children: [new TextRun({ text: `${c.headline} [${formatTime(c.start)}]`, bold: true })]
+                }));
+                children.push(new Paragraph({
+                    children: [new TextRun({ text: c.summary })]
+                }));
+                children.push(new Paragraph({ children: [new TextRun({ text: "" })] })); // empty space
+            });
+            filename = videoName.replace(/\.[^/.]+$/, "") + "_chapters.docx";
+        }
+
+        const doc = new Document({
+            sections: [{ properties: {}, children: children }]
+        });
+
+        const blob = await Packer.toBlob(doc);
+        saveAs(blob, filename);
+    };
+
+    const getSummaryContent = () => {
+        let content = '';
+        if (summaryLang === 'EN') content = summaryData;
+        if (summaryLang === 'HI') content = summaryDataHi;
+        if (summaryLang === 'SPEAKER') {
+            content = speakerLang === 'E' ? summaryDataSpeakers : summaryDataSpeakersHi;
+        }
+        return content;
+    };
+
+    const handleSummaryDownloadTxt = () => {
+        const content = getSummaryContent();
+        if (!content) return;
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = videoName.replace(/\.[^/.]+$/, "") + "_summary.txt";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleSummaryDownloadDocx = async () => {
+        const content = getSummaryContent();
+        if (!content) return;
+
+        const doc = new Document({
+            sections: [{
+                properties: {},
+                children: content.split('\n').map(line => new Paragraph({
+                    children: [new TextRun({ text: line })]
+                }))
+            }]
+        });
+
+        const blob = await Packer.toBlob(doc);
+        saveAs(blob, videoName.replace(/\.[^/.]+$/, "") + "_summary.docx");
+    };
+
+    const handleOpenSettings = () => {
+        const uniqueSpeakers = Array.from(new Set(transcriptData.map(t => t.speaker)));
+        const initialMap: Record<string, string> = {};
+        uniqueSpeakers.forEach(s => { initialMap[s] = s; });
+        setNameMap(initialMap);
+        setIsSettingsModalOpen(true);
+    };
+
+    const handleSaveSettings = () => {
+        const replaceNamesInText = (text: string, map: Record<string, string>) => {
+            let newText = text;
+            for (const [oldName, newName] of Object.entries(map)) {
+                if (oldName !== newName && newName.trim() !== '') {
+                    const escapedOldName = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(escapedOldName, 'g');
+                    newText = newText.replace(regex, newName);
+                }
+            }
+            return newText;
+        };
+
+        const newTranscript = transcriptData.map(t => ({
+            ...t,
+            speaker: nameMap[t.speaker] && nameMap[t.speaker].trim() !== '' ? nameMap[t.speaker] : t.speaker
+        }));
+
+        const newChapters = chaptersData.map(c => ({
+            ...c,
+            summary: replaceNamesInText(c.summary, nameMap)
+        }));
+
+        const newSummary = replaceNamesInText(summaryData, nameMap);
+        const newSummaryHi = replaceNamesInText(summaryDataHi, nameMap);
+        const newSummarySpeakers = replaceNamesInText(summaryDataSpeakers, nameMap);
+        const newSummarySpeakersHi = replaceNamesInText(summaryDataSpeakersHi, nameMap);
+
+        setTranscriptData(newTranscript);
+        setChaptersData(newChapters);
+        setSummaryData(newSummary);
+        setSummaryDataHi(newSummaryHi);
+        setSummaryDataSpeakers(newSummarySpeakers);
+        setSummaryDataSpeakersHi(newSummarySpeakersHi);
+
+        const storedData = localStorage.getItem('meetingInsights');
+        if (storedData) {
+            try {
+                const parsedData = JSON.parse(storedData);
+                parsedData.transcript = newTranscript;
+                parsedData.chapters = newChapters;
+                parsedData.summary = newSummary;
+                parsedData.summary_hi = newSummaryHi;
+                parsedData.summary_speakers = newSummarySpeakers;
+                parsedData.summary_speakers_hi = newSummarySpeakersHi;
+                localStorage.setItem('meetingInsights', JSON.stringify(parsedData));
+            } catch (error) {
+                console.error("Error updating local storage", error);
+            }
+        }
+        setIsSettingsModalOpen(false);
+    };
+
+    const handleCopy = () => {
+        if (!transcriptData.length) return;
+        const textStr = transcriptData.map(t => `${t.speaker}: ${t.text}`).join('\n\n');
+        navigator.clipboard.writeText(textStr);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    const formatTime = (ms?: number) => {
+        if (ms === undefined) return "--:--";
+        const totalSeconds = Math.floor(ms / 1000);
+        const m = Math.floor(totalSeconds / 60);
+        const s = totalSeconds % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    useEffect(() => {
+        const storedData = localStorage.getItem('meetingInsights');
+        if (storedData) {
+            try {
+                const parsedData = JSON.parse(storedData);
+                setTranscriptData(parsedData.transcript || []);
+                setChaptersData(parsedData.chapters || []);
+                setSummaryData(parsedData.summary || '');
+                setSummaryDataHi(parsedData.summary_hi || '');
+                setSummaryDataSpeakers(parsedData.summary_speakers || '');
+                setSummaryDataSpeakersHi(parsedData.summary_speakers_hi || '');
+            } catch (error) {
+                console.error("Error parsing stored data", error);
+            }
+        }
+
+        const storedVideoUrl = localStorage.getItem('videoObjectUrl');
+        if (storedVideoUrl) setVideoUrl(storedVideoUrl);
+
+        const storedVideoName = localStorage.getItem('videoName');
+        if (storedVideoName) setVideoName(storedVideoName);
+
+        setIsLoading(false);
+    }, []);
+
+    return (
+        <div className="min-h-screen bg-[#0a0a0f] text-gray-200 antialiased selection:bg-blue-500/30 font-sans flex flex-col">
+            {/* Top Navigation */}
+            <nav className="glass border-b border-white/10 px-6 py-4 flex items-center justify-between z-50 sticky top-0 bg-black/50 backdrop-blur-xl">
+                <div className="flex items-center gap-4">
+                    <Link href="/upload" className="flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 transition-colors">
+                        <ArrowLeft className="w-4 h-4 text-gray-400" />
+                    </Link>
+                    <h1 className="text-lg font-semibold text-white tracking-tight flex items-center gap-2 max-w-xl truncate">
+                        {videoName.replace(/\.mp4$/i, '')}
+                        <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400 flex-shrink-0">.mp4</span>
+                    </h1>
+                </div>
+            </nav>
+
+            {/* Main Content */}
+            <div className="flex-1 flex flex-col lg:flex-row min-h-0">
+
+                {/* Left Side: Video & Transcript */}
+                <div className="w-full lg:w-1/2 flex flex-col border-r border-white/10 bg-black/20">
+
+                    {/* Real Video Player */}
+                    <div className="relative aspect-video bg-black flex-shrink-0 flex items-center justify-center overflow-hidden border-b border-white/10">
+                        {videoUrl ? (
+                            <video
+                                src={videoUrl}
+                                controls
+                                className="w-full h-full outline-none"
+                            />
+                        ) : (
+                            <div className="flex flex-col items-center justify-center text-gray-500 space-y-4">
+                                <Play className="w-12 h-12 opacity-50" />
+                                <p>No video available</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Transcript Section */}
+                    <div className="flex-1 flex flex-col min-h-0 bg-[#0f0f15]">
+                        {/* Tabs */}
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-black/40">
+                            <div className="flex gap-2 bg-white/5 p-1 rounded-lg">
+                                <button onClick={() => setActiveTab('transcript')} className={`text-sm font-medium transition-colors px-4 py-1.5 rounded-md ${activeTab === 'transcript' ? 'text-white shadow bg-white/10' : 'text-gray-500 hover:text-white'}`}>Transcript</button>
+                                <button onClick={() => setActiveTab('chapters')} className={`text-sm font-medium transition-colors px-4 py-1.5 rounded-md ${activeTab === 'chapters' ? 'text-white shadow bg-white/10' : 'text-gray-500 hover:text-white'}`}>Chapters</button>
+                            </div>
+                            <div className="flex items-center gap-3 text-gray-400">
+                                <span title="Copy Text" className="flex">
+                                    {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy onClick={handleCopy} className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />}
+                                </span>
+                                <div className="flex bg-black/40 rounded items-center border border-white/10 overflow-hidden">
+                                    <span className="px-2 py-1 border-r border-white/10">
+                                        <Download className="w-3.5 h-3.5" />
+                                    </span>
+                                    <button onClick={handleDownloadTxt} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors border-r border-white/10" title="Download TXT">TXT</button>
+                                    <button onClick={handleDownloadDocx} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors" title="Download DOCX">DOCX</button>
+                                </div>
+                                <span title="Edit Speakers" className="flex">
+                                    <Settings onClick={handleOpenSettings} className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Transcript / Chapters Content */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar scroll-smooth">
+                            {isLoading ? (
+                                <p className="text-gray-500 text-center mt-10">Loading data...</p>
+                            ) : activeTab === 'transcript' ? (
+                                transcriptData.length > 0 ? (
+                                    transcriptData.map((item, index) => (
+                                        <div key={index} className="group flex gap-4 pr-2">
+                                            <span className="text-xs font-medium text-blue-400 w-12 flex-shrink-0 pt-0.5 select-none">{formatTime(item.start)}</span>
+                                            <div className="flex-1">
+                                                <p className="text-sm text-gray-300 leading-relaxed group-hover:bg-white/5 p-2 rounded -mt-2 -ml-2 transition-colors cursor-text">
+                                                    <span className="font-semibold text-blue-300 block mb-1">{item.speaker}</span>
+                                                    {item.text}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-gray-500 text-center mt-10">No transcript available.</p>
+                                )
+                            ) : (
+                                chaptersData.length > 0 ? (
+                                    chaptersData.map((chapter, index) => (
+                                        <div key={index} className="group flex gap-4 pr-2 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors border border-transparent hover:border-white/5">
+                                            <span className="text-xs font-medium text-purple-400 w-12 flex-shrink-0 pt-0.5 select-none">{formatTime(chapter.start)}</span>
+                                            <div className="flex-1">
+                                                <h4 className="text-sm font-bold text-gray-200 mb-1">{chapter.headline}</h4>
+                                                <p className="text-sm text-gray-400 leading-relaxed">
+                                                    {chapter.summary}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-gray-500 text-center mt-10">No chapters generated.</p>
+                                )
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Side: Summary & Insights */}
+                <div className="w-full lg:w-1/2 flex flex-col bg-[#050508] relative">
+                    {/* Top Controls */}
+                    <div className="flex items-center justify-between px-6 py-3 border-b border-white/5 bg-[#0a0a0f]/80 backdrop-blur-md">
+                        <div className="flex items-center gap-1">
+                            <button className="flex items-center gap-2 text-sm font-medium bg-blue-600/20 text-blue-400 px-4 py-2 rounded-lg border border-blue-500/30 w-fit">
+                                <AlignLeft className="w-4 h-4" /> Summary
+                            </button>
+                            <div className="ml-2 flex bg-black/40 rounded items-center border border-white/10 overflow-hidden">
+                                <span className="px-2 py-1 border-r border-white/10">
+                                    <Download className="w-3.5 h-3.5 text-gray-400" />
+                                </span>
+                                <button onClick={handleSummaryDownloadTxt} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors border-r border-white/10" title="Download TXT">TXT</button>
+                                <button onClick={handleSummaryDownloadDocx} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors" title="Download DOCX">DOCX</button>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="flex bg-black/40 rounded-lg p-1 border border-white/10 shadow-inner">
+                                <button
+                                    onClick={() => setSummaryLang('EN')}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'EN' ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                    title="English Summary"
+                                >
+                                    ENG
+                                </button>
+                                <button
+                                    onClick={() => setSummaryLang('HI')}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'HI' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                    title="Hinglish Summary"
+                                >
+                                    HING
+                                </button>
+                                <button
+                                    onClick={() => setSummaryLang('SPEAKER')}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'SPEAKER' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                    title="Speaker-wise Summary"
+                                >
+                                    BY SPEAKER
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Summary Content Body */}
+                    <div className="flex-1 overflow-y-auto p-8 custom-scrollbar relative bg-gradient-to-b from-transparent to-[#050508]/50">
+                        {isLoading ? (
+                            <div className="flex items-center justify-center h-full">
+                                <p className="text-gray-400">Loading insights...</p>
+                            </div>
+                        ) : summaryLang === 'EN' ? (
+                            <div className="animate-in fade-in duration-300 h-full flex flex-col">
+                                <h2 className="text-2xl font-bold text-white mb-4 tracking-tight flex-shrink-0">Summary of Video Content</h2>
+                                <div className="text-[14px] text-gray-300 leading-relaxed mb-8 bg-white/5 p-6 rounded-xl border border-white/5 whitespace-pre-wrap font-sans overflow-auto flex-1">
+                                    {summaryData || "No summary available."}
+                                </div>
+                            </div>
+                        ) : summaryLang === 'HI' ? (
+                            <div className="animate-in fade-in duration-300 h-full flex flex-col">
+                                <h2 className="text-2xl font-bold text-white mb-4 tracking-tight border-l-4 border-green-500 pl-3 flex-shrink-0">Video Content ka Summary</h2>
+                                <div className="text-[14px] text-gray-300 leading-relaxed mb-8 bg-green-900/10 p-6 rounded-xl border border-green-500/20 whitespace-pre-wrap font-sans overflow-auto flex-1">
+                                    {summaryDataHi || "Hinglish summary is loading or not available. Re-process video to generate."}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="animate-in fade-in duration-300 h-full flex flex-col">
+                                <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                                    <h2 className="text-2xl font-bold text-white tracking-tight border-l-4 border-orange-500 pl-3">Speaker-wise Summary</h2>
+
+                                    {/* Secondary E / H Toggle */}
+                                    <div className="flex bg-black/40 rounded-lg p-1 border border-white/10 shadow-inner">
+                                        <button
+                                            onClick={() => setSpeakerLang('E')}
+                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${speakerLang === 'E' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                            title="English"
+                                        >
+                                            E
+                                        </button>
+                                        <button
+                                            onClick={() => setSpeakerLang('H')}
+                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${speakerLang === 'H' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                            title="Hinglish"
+                                        >
+                                            H
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="text-[14px] text-gray-300 leading-relaxed mb-8 bg-orange-900/10 p-6 rounded-xl border border-orange-500/20 whitespace-pre-wrap font-sans overflow-auto flex-1">
+                                    {speakerLang === 'E' ? (summaryDataSpeakers || "Speaker-wise english summary is loading or not available. Re-process video to generate.") : (summaryDataSpeakersHi || "Speaker-wise hinglish summary is loading or not available. Re-process video to generate.")}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Settings Modal */}
+            {isSettingsModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-[#111116] border border-white/10 rounded-xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <Settings className="w-5 h-5 text-blue-400" /> Edit Speaker Names
+                            </h3>
+                            <button onClick={() => setIsSettingsModalOpen(false)} className="text-gray-400 hover:text-white transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto max-h-[60vh] space-y-4 custom-scrollbar">
+                            <p className="text-sm text-gray-400 mb-2">Update the automatically detected speaker names. This will dynamically update your transcript and all AI summaries.</p>
+                            {Object.entries(nameMap).map(([oldName, newName], idx) => (
+                                <div key={idx} className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider pl-1">{oldName}</label>
+                                    <input
+                                        type="text"
+                                        value={newName}
+                                        onChange={(e) => setNameMap(prev => ({ ...prev, [oldName]: e.target.value }))}
+                                        className="bg-black/40 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                                        placeholder="Enter person's name..."
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="px-6 py-4 border-t border-white/10 bg-white/5 flex items-center justify-end gap-3">
+                            <button onClick={() => setIsSettingsModalOpen(false)} className="px-5 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+                                Cancel
+                            </button>
+                            <button onClick={handleSaveSettings} className="px-5 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-[0_0_15px_rgba(37,99,235,0.4)]">
+                                Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <style jsx global>{`
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: rgba(255, 255, 255, 0.1);
+                    border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255, 255, 255, 0.2);
+                }
+            `}</style>
+        </div>
+    );
+}
