@@ -489,6 +489,11 @@ export default function InsightsPage() {
                                                             <span className="text-gray-300 flex items-center gap-1.5"><strong className="text-gray-500 bg-black/50 px-1.5 py-0.5 rounded">Owner</strong> {item.owner || "Unassigned"}</span>
                                                             <span className="text-gray-300 flex items-center gap-1.5"><strong className="text-gray-500 bg-black/50 px-1.5 py-0.5 rounded">Deadline</strong> {item.deadline || "None"}</span>
                                                         </div>
+                                                        {item.risk_reason && (
+                                                            <div className="text-xs text-gray-400 mt-2 bg-black/20 p-2 rounded border border-white/5">
+                                                                <strong className="text-gray-500">Risk Context:</strong> {item.risk_reason}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ))}
                                                 {(!intelligenceData.action_items || intelligenceData.action_items.length === 0) && (
