@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Play, Copy, Download, ChevronDown, MessageSquare, ListTree, AlignLeft, Settings, Sparkles, Check, X, ShieldAlert, Target, HeartPulse, Activity } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Play, Copy, Download, ChevronDown, MessageSquare, ListTree, AlignLeft, Settings, Sparkles, Check, X, ShieldAlert, Target, HeartPulse, Activity, BarChart2, Search } from 'lucide-react';
 import Link from 'next/link';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { saveAs } from 'file-saver';
@@ -24,6 +24,14 @@ export default function InsightsPage() {
     const [copied, setCopied] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [nameMap, setNameMap] = useState<Record<string, string>>({});
+    const [searchQuery, setSearchQuery] = useState('');
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    const handleJumpToTime = (ms?: number) => {
+        if (ms === undefined || !videoRef.current) return;
+        videoRef.current.currentTime = ms / 1000;
+        videoRef.current.play();
+    };
 
     const handleComingSoon = () => alert("This feature will be available in V2!");
 
@@ -190,6 +198,14 @@ export default function InsightsPage() {
                     owner: item.owner ? replaceNamesInText(item.owner, nameMap) : item.owner
                 }));
             }
+
+            // Replace names in speaker metrics
+            if (newIntelligence.speaker_metrics && newIntelligence.speaker_metrics.speakers) {
+                newIntelligence.speaker_metrics.speakers = newIntelligence.speaker_metrics.speakers.map((spk: any) => ({
+                    ...spk,
+                    name: replaceNamesInText(spk.name, nameMap)
+                }));
+            }
         }
 
         setTranscriptData(newTranscript);
@@ -235,6 +251,26 @@ export default function InsightsPage() {
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
+    const highlightText = (text: string, highlight: string) => {
+        if (!highlight.trim()) {
+            return <span>{text}</span>;
+        }
+        // Split text on highlight term, include term in parts array
+        const regex = new RegExp(`(${highlight})`, 'gi');
+        const parts = text.split(regex);
+        return (
+            <span>
+                {parts.map((part, i) =>
+                    regex.test(part) ? (
+                        <mark key={i} className="bg-blue-500/40 text-blue-100 rounded px-0.5 font-medium">{part}</mark>
+                    ) : (
+                        <span key={i}>{part}</span>
+                    )
+                )}
+            </span>
+        );
+    };
+
     useEffect(() => {
         const storedData = localStorage.getItem('meetingInsights');
         if (storedData) {
@@ -262,7 +298,7 @@ export default function InsightsPage() {
     }, []);
 
     return (
-        <div className="min-h-screen bg-[#0a0a0f] text-gray-200 antialiased selection:bg-blue-500/30 font-sans flex flex-col">
+        <div className="h-screen overflow-hidden bg-[#0a0a0f] text-gray-200 antialiased selection:bg-blue-500/30 font-sans flex flex-col">
             {/* Top Navigation */}
             <nav className="glass border-b border-white/10 px-6 py-4 flex items-center justify-between z-50 sticky top-0 bg-black/50 backdrop-blur-xl">
                 <div className="flex items-center gap-4">
@@ -280,12 +316,13 @@ export default function InsightsPage() {
             <div className="flex-1 flex flex-col lg:flex-row min-h-0">
 
                 {/* Left Side: Video & Transcript */}
-                <div className="w-full lg:w-1/2 flex flex-col border-r border-white/10 bg-black/20">
+                <div className="w-full lg:w-1/2 flex flex-col border-r border-white/10 bg-black/20 overflow-y-auto custom-scrollbar relative">
 
                     {/* Real Video Player */}
                     <div className="relative aspect-video bg-black flex-shrink-0 flex items-center justify-center overflow-hidden border-b border-white/10">
                         {videoUrl ? (
                             <video
+                                ref={videoRef}
                                 src={videoUrl}
                                 controls
                                 className="w-full h-full outline-none"
@@ -299,14 +336,28 @@ export default function InsightsPage() {
                     </div>
 
                     {/* Transcript Section */}
-                    <div className="flex-1 flex flex-col min-h-0 bg-[#0f0f15]">
-                        {/* Tabs */}
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-black/40">
-                            <div className="flex gap-2 bg-white/5 p-1 rounded-lg">
+                    <div className="flex flex-col bg-[#0f0f15]">
+                        {/* Tabs & Search */}
+                        <div className="flex flex-wrap items-center justify-between px-4 py-3 border-b border-white/5 bg-black/40 sticky top-0 z-10 backdrop-blur-md gap-4">
+                            <div className="flex gap-2 bg-white/5 p-1 rounded-lg shrink-0">
                                 <button onClick={() => setActiveTab('transcript')} className={`text-sm font-medium transition-colors px-4 py-1.5 rounded-md ${activeTab === 'transcript' ? 'text-white shadow bg-white/10' : 'text-gray-500 hover:text-white'}`}>Transcript</button>
                                 <button onClick={() => setActiveTab('chapters')} className={`text-sm font-medium transition-colors px-4 py-1.5 rounded-md ${activeTab === 'chapters' ? 'text-white shadow bg-white/10' : 'text-gray-500 hover:text-white'}`}>Chapters</button>
                             </div>
-                            <div className="flex items-center gap-3 text-gray-400">
+
+                            {activeTab === 'transcript' && (
+                                <div className="relative flex-1 min-w-[140px] max-w-[200px]">
+                                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full bg-black/50 border border-white/10 rounded-md py-1.5 pl-9 pr-3 text-sm text-gray-200 placeholder:text-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="flex items-center gap-3 text-gray-400 ml-auto shrink-0">
                                 <span title="Copy Text" className="flex">
                                     {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy onClick={handleCopy} className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />}
                                 </span>
@@ -324,30 +375,30 @@ export default function InsightsPage() {
                         </div>
 
                         {/* Transcript / Chapters Content */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar scroll-smooth">
+                        <div className="p-4 space-y-6 scroll-smooth">
                             {isLoading ? (
                                 <p className="text-gray-500 text-center mt-10">Loading data...</p>
                             ) : activeTab === 'transcript' ? (
-                                transcriptData.length > 0 ? (
-                                    transcriptData.map((item, index) => (
+                                (searchQuery ? transcriptData.filter(item => item.text.toLowerCase().includes(searchQuery.toLowerCase()) || item.speaker.toLowerCase().includes(searchQuery.toLowerCase())) : transcriptData).length > 0 ? (
+                                    (searchQuery ? transcriptData.filter(item => item.text.toLowerCase().includes(searchQuery.toLowerCase()) || item.speaker.toLowerCase().includes(searchQuery.toLowerCase())) : transcriptData).map((item, index) => (
                                         <div key={index} className="group flex gap-4 pr-2">
-                                            <span className="text-xs font-medium text-blue-400 w-12 flex-shrink-0 pt-0.5 select-none">{formatTime(item.start)}</span>
+                                            <button onClick={() => handleJumpToTime(item.start)} className="text-xs font-medium text-blue-400 hover:text-blue-300 hover:underline w-12 flex-shrink-0 pt-0.5 select-none text-left cursor-pointer">{formatTime(item.start)}</button>
                                             <div className="flex-1">
                                                 <p className="text-sm text-gray-300 leading-relaxed group-hover:bg-white/5 p-2 rounded -mt-2 -ml-2 transition-colors cursor-text">
-                                                    <span className="font-semibold text-blue-300 block mb-1">{item.speaker}</span>
-                                                    {item.text}
+                                                    <span className="font-semibold text-blue-300 block mb-1">{highlightText(item.speaker, searchQuery)}</span>
+                                                    {highlightText(item.text, searchQuery)}
                                                 </p>
                                             </div>
                                         </div>
                                     ))
                                 ) : (
-                                    <p className="text-gray-500 text-center mt-10">No transcript available.</p>
+                                    <p className="text-gray-500 text-center mt-10">No transcript matches found.</p>
                                 )
                             ) : (
                                 chaptersData.length > 0 ? (
                                     chaptersData.map((chapter, index) => (
-                                        <div key={index} className="group flex gap-4 pr-2 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors border border-transparent hover:border-white/5">
-                                            <span className="text-xs font-medium text-purple-400 w-12 flex-shrink-0 pt-0.5 select-none">{formatTime(chapter.start)}</span>
+                                        <div key={index} className="group flex gap-4 pr-2 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors border border-transparent hover:border-white/5" onClick={() => handleJumpToTime(chapter.start)}>
+                                            <span className="text-xs font-medium text-purple-400 hover:text-purple-300 hover:underline w-12 flex-shrink-0 pt-0.5 select-none text-left">{formatTime(chapter.start)}</span>
                                             <div className="flex-1">
                                                 <h4 className="text-sm font-bold text-gray-200 mb-1">{chapter.headline}</h4>
                                                 <p className="text-sm text-gray-400 leading-relaxed">
@@ -421,13 +472,13 @@ export default function InsightsPage() {
                     </div>
 
                     {/* Summary Content Body */}
-                    <div className="flex-1 overflow-y-auto p-8 custom-scrollbar relative bg-gradient-to-b from-transparent to-[#050508]/50">
+                    <div className="flex-1 overflow-y-auto p-6 pb-4 custom-scrollbar relative bg-gradient-to-b from-transparent to-[#050508]/50">
                         {isLoading ? (
                             <div className="flex items-center justify-center h-full">
                                 <p className="text-gray-400">Loading insights...</p>
                             </div>
                         ) : rightView === 'intelligence' ? (
-                            <div className="animate-in fade-in duration-300 h-full flex flex-col gap-6">
+                            <div className="animate-in fade-in duration-300 flex flex-col gap-6">
                                 {intelligenceData ? (
                                     <>
                                         {/* Health Score */}
@@ -501,6 +552,39 @@ export default function InsightsPage() {
                                                 )}
                                             </div>
                                         </div>
+
+                                        {/* Speaker Analytics */}
+                                        {intelligenceData.speaker_metrics?.speakers && intelligenceData.speaker_metrics.speakers.length > 0 && (
+                                            <div className="bg-emerald-950/20 border border-emerald-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden">
+                                                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl"></div>
+                                                <h3 className="text-lg font-bold flex items-center gap-2 text-emerald-400 mb-4 relative z-10"><BarChart2 className="w-5 h-5" /> Speaker Analytics</h3>
+
+                                                <div className="space-y-4 relative z-10">
+                                                    {intelligenceData.speaker_metrics.speakers.map((spk: any, i: number) => (
+                                                        <div key={i} className="flex flex-col gap-1 text-sm bg-black/40 p-4 rounded-xl border border-white/5">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <span className="font-semibold text-gray-100">{spk.name}</span>
+                                                                <span className="text-emerald-400 font-bold">{spk.percentage}%</span>
+                                                            </div>
+                                                            {/* Progress Bar */}
+                                                            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                                                <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000 ease-out" style={{ width: `${spk.percentage}%` }}></div>
+                                                            </div>
+
+                                                            <div className="flex justify-between items-center mt-2 text-xs text-gray-400">
+                                                                <span className="flex items-center gap-1.5"><strong className="text-gray-500 bg-black/50 px-1.5 py-0.5 rounded">Total Time</strong> {formatTime(spk.total_time)}</span>
+                                                                <span className="flex items-center gap-1.5"><strong className="text-gray-500 bg-black/50 px-1.5 py-0.5 rounded">Longest Monologue</strong> {formatTime(spk.longest_monologue)}</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+
+                                                    <div className="flex items-center justify-between text-xs mt-4 pt-4 border-t border-white/5">
+                                                        <span className="text-gray-400">Detected Interruptions & Overlaps:</span>
+                                                        <span className="text-orange-400 font-bold bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/30">{intelligenceData.speaker_metrics.interruptions}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </>
                                 ) : (
                                     <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
@@ -514,14 +598,14 @@ export default function InsightsPage() {
                         ) : summaryLang === 'EN' ? (
                             <div className="animate-in fade-in duration-300 h-full flex flex-col">
                                 <h2 className="text-2xl font-bold text-white mb-4 tracking-tight flex-shrink-0">Summary of Video Content</h2>
-                                <div className="text-[14px] text-gray-300 leading-relaxed mb-8 bg-white/5 p-6 rounded-xl border border-white/5 whitespace-pre-wrap font-sans overflow-auto flex-1">
+                                <div className="text-[14px] text-gray-300 leading-relaxed bg-white/5 p-6 rounded-xl border border-white/5 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
                                     {summaryData || "No summary available."}
                                 </div>
                             </div>
                         ) : summaryLang === 'HI' ? (
                             <div className="animate-in fade-in duration-300 h-full flex flex-col">
                                 <h2 className="text-2xl font-bold text-white mb-4 tracking-tight border-l-4 border-green-500 pl-3 flex-shrink-0">Video Content ka Summary</h2>
-                                <div className="text-[14px] text-gray-300 leading-relaxed mb-8 bg-green-900/10 p-6 rounded-xl border border-green-500/20 whitespace-pre-wrap font-sans overflow-auto flex-1">
+                                <div className="text-[14px] text-gray-300 leading-relaxed bg-green-900/10 p-6 rounded-xl border border-green-500/20 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
                                     {summaryDataHi || "Hinglish summary is loading or not available. Re-process video to generate."}
                                 </div>
                             </div>
@@ -548,7 +632,7 @@ export default function InsightsPage() {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="text-[14px] text-gray-300 leading-relaxed mb-8 bg-orange-900/10 p-6 rounded-xl border border-orange-500/20 whitespace-pre-wrap font-sans overflow-auto flex-1">
+                                <div className="text-[14px] text-gray-300 leading-relaxed bg-orange-900/10 p-6 rounded-xl border border-orange-500/20 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
                                     {speakerLang === 'E' ? (summaryDataSpeakers || "Speaker-wise english summary is loading or not available. Re-process video to generate.") : (summaryDataSpeakersHi || "Speaker-wise hinglish summary is loading or not available. Re-process video to generate.")}
                                 </div>
                             </div>

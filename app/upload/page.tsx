@@ -10,6 +10,37 @@ export default function UploadPage() {
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState(0);
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+    const [messageIndex, setMessageIndex] = useState(0);
+
+    const loadingMessages = [
+        "Uploading meeting recording...",
+        "Extracting the juicy audio...",
+        "Transcribing speech with AI magic...",
+        "Analyzing meeting health score...",
+        "Hunting for missed signals...",
+        "Are these action items? Extracting...",
+        "Whoa, this is a long one. Keep holding...",
+        "Our GPU servers are sweating right now 🥵",
+        "Did you upload a feature film?! 🎥",
+        "Bribing the AI to work faster... 💸",
+        "Calculating... calculating... calculating...",
+        "You should probably grab a coffee ☕",
+        "At this point, you could have just sent an email...",
+        "Still here! Promise it hasn't crashed... 🤞",
+        "Okay, any second now... maybe."
+    ];
+
+    React.useEffect(() => {
+        let interval: ReturnType<typeof setInterval>;
+        if (uploading && progress < 100) {
+            interval = setInterval(() => {
+                setMessageIndex(prev => Math.min(prev + 1, loadingMessages.length - 1));
+            }, 30000);
+        } else {
+            setMessageIndex(0);
+        }
+        return () => clearInterval(interval);
+    }, [uploading, progress, loadingMessages.length]);
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
@@ -136,8 +167,8 @@ export default function UploadPage() {
                                 </div>
                             )}
 
-                            <h3 className="text-2xl font-bold text-white mb-2">
-                                {progress === 100 ? 'Upload Complete' : 'Uploading...'}
+                            <h3 className="text-2xl font-bold text-white mb-2 transition-opacity duration-300">
+                                {progress === 100 ? 'Analysis Complete! 🎉' : loadingMessages[messageIndex]}
                             </h3>
                             <p className="text-gray-400 text-sm mb-8 max-w-xs mx-auto truncate w-full">
                                 {uploadedFile?.name || 'meeting_recording.mp4'}
