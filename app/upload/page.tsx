@@ -1,24 +1,46 @@
 "use client";
 
 import React, { useState } from 'react';
-import { ScanFace, UploadCloud, FileVideo, ArrowLeft, CheckCircle, Sparkles } from 'lucide-react';
+import { ScanFace, UploadCloud, FileVideo, ArrowLeft, CheckCircle, Sparkles, History, X, Clock, FileText } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
+interface PastSummary {
+    id: string;
+    fileName: string;
+    timestamp: number;
+    summary: string;
+    fullData?: any;
+}
+
 export default function UploadPage() {
+    const router = useRouter();
     const [isDragging, setIsDragging] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState(0);
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
     const [messageIndex, setMessageIndex] = useState(0);
+    const [history, setHistory] = useState<PastSummary[]>([]);
+    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+    const [selectedHistoryItem, setSelectedHistoryItem] = useState<PastSummary | null>(null);
+
+    const handleViewHistoryDetails = (item: PastSummary) => {
+        if (!item.fullData) {
+            // Fallback for summaries already cached without full data
+            setSelectedHistoryItem(item);
+            return;
+        }
+        localStorage.setItem('meetingInsights', JSON.stringify(item.fullData));
+        localStorage.setItem('videoName', item.fileName);
+        localStorage.removeItem('videoObjectUrl'); // Keep empty to prevent large bloat issues
+        router.push('/insights');
+    };
 
     const loadingMessages = [
         "Uploading meeting recording...",
-        "Extracting the juicy audio...",
         "Transcribing speech with AI magic...",
         "Analyzing meeting health score...",
-        "Hunting for missed signals...",
-        "Are these action items? Extracting...",
         "Whoa, this is a long one. Keep holding...",
         "Our GPU servers are sweating right now 🥵",
         "Did you upload a feature film?! 🎥",
@@ -31,6 +53,21 @@ export default function UploadPage() {
     ];
 
     React.useEffect(() => {
+        // Load history and clear items older than 24 hours
+        try {
+            const stored = localStorage.getItem('meetingHistory');
+            if (stored) {
+                let parsed: PastSummary[] = JSON.parse(stored);
+                const now = new Date().getTime();
+                const oneDayMs = 24 * 60 * 60 * 1000;
+                parsed = parsed.filter(item => now - item.timestamp < oneDayMs);
+                localStorage.setItem('meetingHistory', JSON.stringify(parsed));
+                setHistory(parsed.sort((a, b) => b.timestamp - a.timestamp));
+            }
+        } catch (error) {
+            console.error("Error loading history", error);
+        }
+
         let interval: ReturnType<typeof setInterval>;
         if (uploading && progress < 100) {
             interval = setInterval(() => {
@@ -84,6 +121,22 @@ export default function UploadPage() {
             localStorage.setItem('videoName', file.name);
             localStorage.setItem('videoObjectUrl', URL.createObjectURL(file));
 
+            // Save basic summary to 24-hour history
+            if (data.summary) {
+                const newHistoryItem: PastSummary = {
+                    id: Date.now().toString(),
+                    fileName: file.name,
+                    timestamp: Date.now(),
+                    summary: data.summary,
+                    fullData: data
+                };
+                setHistory(prev => {
+                    const updated = [newHistoryItem, ...prev];
+                    localStorage.setItem('meetingHistory', JSON.stringify(updated));
+                    return updated;
+                });
+            }
+
             clearInterval(interval);
             setProgress(100);
             setTimeout(() => setUploading(false), 500); // Give it a moment to show 100%
@@ -130,9 +183,15 @@ export default function UploadPage() {
                         <ScanFace className="w-6 h-6 text-blue-400" />
                         <span className="text-xl font-bold tracking-tight text-white">Meet<span className="text-blue-400">Miner</span></span>
                     </Link>
-                    <Link href="/" className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
-                        <ArrowLeft className="w-4 h-4" /> Back
-                    </Link>
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setIsHistoryModalOpen(true)} className={`flex items-center gap-1.5 text-sm font-medium transition-colors px-3 py-1.5 rounded-full border shadow-lg ${history.length > 0 ? 'text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20' : 'text-gray-400 hover:text-gray-300 bg-white/5 hover:bg-white/10 border-white/10'}`}>
+                            <History className="w-4 h-4" /> Past Summaries
+                            <span className={`${history.length > 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-gray-400'} text-[10px] px-1.5 py-0.5 rounded ml-1 font-bold`}>{history.length}</span>
+                        </button>
+                        <Link href="/" className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
+                            <ArrowLeft className="w-4 h-4" /> Back
+                        </Link>
+                    </div>
                 </div>
             </nav>
 
@@ -221,6 +280,74 @@ export default function UploadPage() {
                     )}
                 </div>
             </div>
+
+            {/* History Modal */}
+            {isHistoryModalOpen && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-[#0f0f15] border border-white/10 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/40">
+                            <h2 className="text-lg font-bold text-white flex items-center gap-2"><History className="w-5 h-5 text-emerald-400" /> Recent Summaries (Last 24h)</h2>
+                            <button onClick={() => { setIsHistoryModalOpen(false); setSelectedHistoryItem(null); }} className="text-gray-400 hover:text-white transition-colors p-1 bg-white/5 rounded-full hover:bg-white/10">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-gradient-to-b from-transparent to-black/20">
+                            {selectedHistoryItem ? (
+                                <div className="animate-in slide-in-from-right-4 duration-300">
+                                    <button onClick={() => setSelectedHistoryItem(null)} className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 mb-6 transition-colors bg-blue-500/10 px-3 py-1.5 rounded-full w-fit">
+                                        <ArrowLeft className="w-4 h-4" /> Back to list
+                                    </button>
+                                    <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                                        <FileText className="w-5 h-5 text-emerald-500" />
+                                        {selectedHistoryItem.fileName}
+                                    </h3>
+                                    <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-6 bg-white/5 w-fit px-2 py-1 rounded">
+                                        <Clock className="w-3.5 h-3.5" />
+                                        {new Date(selectedHistoryItem.timestamp).toLocaleString(undefined, {
+                                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                                        })}
+                                    </div>
+                                    <div className="bg-black/40 border border-white/5 p-6 rounded-2xl text-[15px] text-gray-300 leading-relaxed whitespace-pre-wrap font-sans">
+                                        {selectedHistoryItem.summary}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {history.length === 0 ? (
+                                        <p className="text-center text-gray-500 py-10">No recent summaries found.</p>
+                                    ) : (
+                                        history.map(item => (
+                                            <div key={item.id} onClick={() => handleViewHistoryDetails(item)} className="group bg-black/40 border border-white/5 hover:border-emerald-500/30 p-5 rounded-xl cursor-pointer transition-all hover:bg-white/5 shadow-lg">
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <h4 className="font-semibold text-gray-200 group-hover:text-emerald-400 transition-colors flex items-center gap-2">
+                                                        <FileText className="w-4 h-4 text-emerald-500/70" />
+                                                        {item.fileName}
+                                                    </h4>
+                                                    <span className="text-xs font-semibold text-gray-500 bg-white/5 px-2 py-1 rounded-md border border-white/5 flex items-center gap-1.5">
+                                                        <Clock className="w-3 h-3" />
+                                                        {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                </div>
+                                                <p className="text-sm text-gray-400 line-clamp-2 leading-relaxed bg-black/20 p-3 rounded-lg">
+                                                    {item.summary}
+                                                </p>
+                                                <div className="mt-4 flex items-center justify-between text-xs font-medium">
+                                                    <span className="text-emerald-500/70 group-hover:text-emerald-400 transition-colors flex items-center gap-1">
+                                                        Click to view details &rarr;
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
