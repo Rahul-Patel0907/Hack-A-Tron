@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Play, Copy, Download, ChevronDown, MessageSquare, ListTree, AlignLeft, Settings, Sparkles, Check, X, ShieldAlert, Target, HeartPulse, Activity, BarChart2, Search } from 'lucide-react';
+import { ArrowLeft, Play, Copy, Download, ChevronDown, MessageSquare, ListTree, AlignLeft, Settings, Sparkles, Check, X, ShieldAlert, Target, HeartPulse, Activity, BarChart2, Search, Send, Bot, User } from 'lucide-react';
 import Link from 'next/link';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { saveAs } from 'file-saver';
+import PastSummaries from '../Components/PastSummaries';
 
 export default function InsightsPage() {
     const [summaryLang, setSummaryLang] = useState<'EN' | 'HI' | 'SPEAKER'>('EN');
@@ -19,13 +20,55 @@ export default function InsightsPage() {
     const [videoName, setVideoName] = useState<string>('Meeting Recording.mp4');
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'transcript' | 'chapters'>('transcript');
-    const [rightView, setRightView] = useState<'summary' | 'intelligence'>('summary');
+    const [rightView, setRightView] = useState<'summary' | 'intelligence' | 'chat'>('summary');
     const [intelligenceData, setIntelligenceData] = useState<any>(null);
     const [copied, setCopied] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [nameMap, setNameMap] = useState<Record<string, string>>({});
     const [searchQuery, setSearchQuery] = useState('');
     const videoRef = useRef<HTMLVideoElement>(null);
+
+    // Chat states
+    const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'bot', text: string }[]>([
+        { role: 'bot', text: "Hello! I'm your AI Meeting Assistant. Ask me anything about what was discussed in this meeting." }
+    ]);
+    const [chatInput, setChatInput] = useState('');
+    const [isChatProcessing, setIsChatProcessing] = useState(false);
+    const chatScrollRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (chatScrollRef.current) {
+            chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+        }
+    }, [chatMessages]);
+
+    const handleSendMessage = async () => {
+        if (!chatInput.trim()) return;
+
+        const userText = chatInput;
+        setChatInput('');
+        setChatMessages(prev => [...prev, { role: 'user', text: userText }]);
+        setIsChatProcessing(true);
+
+        const contextText = `Summary:\n${summaryData}\n\nTranscript:\n${transcriptData.map(t => `${t.speaker}: ${t.text}`).join('\n')}`;
+
+        try {
+            const response = await fetch('http://localhost:8000/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question: userText, context: contextText }),
+            });
+            const data = await response.json();
+            if (data.answer) {
+                setChatMessages(prev => [...prev, { role: 'bot', text: data.answer }]);
+            } else {
+                setChatMessages(prev => [...prev, { role: 'bot', text: "Sorry, I couldn't process that. Make sure the backend is running." }]);
+            }
+        } catch (error) {
+            setChatMessages(prev => [...prev, { role: 'bot', text: "Error connecting to AI backend." }]);
+        }
+        setIsChatProcessing(false);
+    };
 
     const handleJumpToTime = (ms?: number) => {
         if (ms === undefined || !videoRef.current) return;
@@ -301,7 +344,7 @@ export default function InsightsPage() {
         <div className="h-screen overflow-hidden bg-[#0a0a0f] text-gray-200 antialiased selection:bg-blue-500/30 font-sans flex flex-col">
             {/* Top Navigation */}
             <nav className="glass border-b border-white/10 px-6 py-4 flex items-center justify-between z-50 sticky top-0 bg-black/50 backdrop-blur-xl">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 flex-1">
                     <Link href="/upload" className="flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 transition-colors">
                         <ArrowLeft className="w-4 h-4 text-gray-400" />
                     </Link>
@@ -309,6 +352,9 @@ export default function InsightsPage() {
                         {videoName.replace(/\.mp4$/i, '')}
                         <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400 flex-shrink-0">.mp4</span>
                     </h1>
+                </div>
+                <div className="flex items-center gap-4 shrink-0">
+                    <PastSummaries />
                 </div>
             </nav>
 
@@ -418,57 +464,22 @@ export default function InsightsPage() {
                 {/* Right Side: Summary & Insights */}
                 <div className="w-full lg:w-1/2 flex flex-col bg-[#050508] relative">
                     {/* Top Controls */}
-                    <div className="flex items-center justify-between px-6 py-3 border-b border-white/5 bg-[#0a0a0f]/80 backdrop-blur-md">
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={() => setRightView('summary')}
-                                className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-all ${rightView === 'summary' ? 'bg-blue-600/20 text-blue-400 border-blue-500/30' : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'}`}>
-                                <AlignLeft className="w-4 h-4" /> Summary
-                            </button>
-                            <button
-                                onClick={() => setRightView('intelligence')}
-                                className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-all ${rightView === 'intelligence' ? 'bg-purple-600/20 text-purple-400 border-purple-500/30' : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'}`}>
-                                <Activity className="w-4 h-4" /> Intelligence
-                            </button>
-
-                            {rightView === 'summary' && (
-                                <div className="ml-2 flex bg-black/40 rounded items-center border border-white/10 overflow-hidden">
-                                    <span className="px-2 py-1 border-r border-white/10">
-                                        <Download className="w-3.5 h-3.5 text-gray-400" />
-                                    </span>
-                                    <button onClick={handleSummaryDownloadTxt} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors border-r border-white/10" title="Download TXT">TXT</button>
-                                    <button onClick={handleSummaryDownloadDocx} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors" title="Download DOCX">DOCX</button>
-                                </div>
-                            )}
-                        </div>
-
-                        {rightView === 'summary' && (
-                            <div className="flex items-center gap-3">
-                                <div className="flex bg-black/40 rounded-lg p-1 border border-white/10 shadow-inner">
-                                    <button
-                                        onClick={() => setSummaryLang('EN')}
-                                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'EN' ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                                        title="English Summary"
-                                    >
-                                        ENG
-                                    </button>
-                                    <button
-                                        onClick={() => setSummaryLang('HI')}
-                                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'HI' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                                        title="Hinglish Summary"
-                                    >
-                                        HING
-                                    </button>
-                                    <button
-                                        onClick={() => setSummaryLang('SPEAKER')}
-                                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'SPEAKER' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                                        title="Speaker-wise Summary"
-                                    >
-                                        BY SPEAKER
-                                    </button>
-                                </div>
-                            </div>
-                        )}
+                    <div className="flex items-center gap-2 px-6 py-3 border-b border-white/5 bg-[#0a0a0f]/80 backdrop-blur-md">
+                        <button
+                            onClick={() => setRightView('summary')}
+                            className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-all ${rightView === 'summary' ? 'bg-blue-600/20 text-blue-400 border-blue-500/30' : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'}`}>
+                            <AlignLeft className="w-4 h-4" /> Summary
+                        </button>
+                        <button
+                            onClick={() => setRightView('intelligence')}
+                            className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-all ${rightView === 'intelligence' ? 'bg-purple-600/20 text-purple-400 border-purple-500/30' : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'}`}>
+                            <Activity className="w-4 h-4" /> Intelligence
+                        </button>
+                        <button
+                            onClick={() => setRightView('chat')}
+                            className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-all ${rightView === 'chat' ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/30' : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'}`}>
+                            <MessageSquare className="w-4 h-4" /> Chatbot
+                        </button>
                     </div>
 
                     {/* Summary Content Body */}
@@ -595,46 +606,112 @@ export default function InsightsPage() {
                                     </div>
                                 )}
                             </div>
-                        ) : summaryLang === 'EN' ? (
-                            <div className="animate-in fade-in duration-300 h-full flex flex-col">
-                                <h2 className="text-2xl font-bold text-white mb-4 tracking-tight flex-shrink-0">Summary of Video Content</h2>
-                                <div className="text-[14px] text-gray-300 leading-relaxed bg-white/5 p-6 rounded-xl border border-white/5 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
-                                    {summaryData || "No summary available."}
+                        ) : rightView === 'chat' ? (
+                            <div className="flex flex-col h-full bg-[#0a0a0f] rounded-2xl border border-white/10 shadow-lg overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+                                {/* Chat Header */}
+                                <div className="bg-emerald-500/10 border-b border-white/5 px-6 py-4 flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                                        <Bot className="w-5 h-5 text-emerald-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-white font-bold tracking-tight">MeetMiner AI Assistant</h3>
+                                        <p className="text-xs text-emerald-400/80 font-medium tracking-wide">Ready to answer questions about this meeting</p>
+                                    </div>
                                 </div>
-                            </div>
-                        ) : summaryLang === 'HI' ? (
-                            <div className="animate-in fade-in duration-300 h-full flex flex-col">
-                                <h2 className="text-2xl font-bold text-white mb-4 tracking-tight border-l-4 border-green-500 pl-3 flex-shrink-0">Video Content ka Summary</h2>
-                                <div className="text-[14px] text-gray-300 leading-relaxed bg-green-900/10 p-6 rounded-xl border border-green-500/20 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
-                                    {summaryDataHi || "Hinglish summary is loading or not available. Re-process video to generate."}
+
+                                {/* Messages Container */}
+                                <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-gradient-to-b from-[#0a0a0f] to-black/80">
+                                    {chatMessages.map((msg, i) => (
+                                        <div key={i} className={`flex items-start gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                                            <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg ${msg.role === 'user' ? 'bg-gradient-to-br from-blue-500 to-purple-600' : 'bg-emerald-500/20 border border-emerald-500/30'}`}>
+                                                {msg.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4 text-emerald-400" />}
+                                            </div>
+                                            <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed shadow-md ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-[#1a1a24] text-gray-200 border border-white/5 rounded-tl-none font-sans whitespace-pre-wrap'}`}>
+                                                {msg.text}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {isChatProcessing && (
+                                        <div className="flex items-start gap-4">
+                                            <div className="shrink-0 w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+                                                <Bot className="w-4 h-4 text-emerald-400" />
+                                            </div>
+                                            <div className="p-4 rounded-2xl bg-[#1a1a24] text-gray-400 border border-white/5 rounded-tl-none flex gap-2">
+                                                <div className="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                                <div className="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                                <div className="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Chat Input Box */}
+                                <div className="p-4 bg-black/40 border-t border-white/10">
+                                    <div className="relative flex items-center">
+                                        <input
+                                            type="text"
+                                            value={chatInput}
+                                            onChange={(e) => setChatInput(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                                            disabled={isChatProcessing}
+                                            placeholder="Ask something like 'What were the action items for Emma?'"
+                                            className="w-full bg-[#111116] border border-white/10 focus:border-emerald-500/50 rounded-xl px-5 py-3.5 pr-14 text-sm text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner disabled:opacity-50"
+                                        />
+                                        <button
+                                            onClick={handleSendMessage}
+                                            disabled={isChatProcessing || !chatInput.trim()}
+                                            className="absolute right-2 p-2 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 hover:text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            <Send className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 text-center mt-3 font-medium tracking-wide">AI can make mistakes. Verify important information with the raw transcript.</p>
                                 </div>
                             </div>
                         ) : (
                             <div className="animate-in fade-in duration-300 h-full flex flex-col">
-                                <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                                    <h2 className="text-2xl font-bold text-white tracking-tight border-l-4 border-orange-500 pl-3">Speaker-wise Summary</h2>
+                                <div className="flex flex-row items-center justify-between mb-6 flex-shrink-0 gap-4 w-full">
+                                    <h2 className={`text-xl xl:text-2xl font-bold tracking-tight border-l-4 pl-3 ${summaryLang === 'EN' ? 'text-white border-blue-500' : summaryLang === 'HI' ? 'text-white border-green-500' : 'text-white border-orange-500'} truncate mr-auto`}>
+                                        {summaryLang === 'EN' ? 'Summary of Video Content' : summaryLang === 'HI' ? 'Video Content ka Summary' : 'Speaker-wise Summary'}
+                                    </h2>
 
-                                    {/* Secondary E / H Toggle */}
-                                    <div className="flex bg-black/40 rounded-lg p-1 border border-white/10 shadow-inner">
-                                        <button
-                                            onClick={() => setSpeakerLang('E')}
-                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${speakerLang === 'E' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                                            title="English"
-                                        >
-                                            E
-                                        </button>
-                                        <button
-                                            onClick={() => setSpeakerLang('H')}
-                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${speakerLang === 'H' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                                            title="Hinglish"
-                                        >
-                                            H
-                                        </button>
+                                    <div className="flex flex-nowrap items-center gap-3 shrink-0">
+                                        <div className="flex bg-black/40 rounded items-center border border-white/10 overflow-hidden">
+                                            <span className="px-2 py-1 border-r border-white/10 text-gray-400">
+                                                <Download className="w-3.5 h-3.5" />
+                                            </span>
+                                            <button onClick={handleSummaryDownloadTxt} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors border-r border-white/10" title="Download TXT">TXT</button>
+                                            <button onClick={handleSummaryDownloadDocx} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors" title="Download DOCX">DOCX</button>
+                                        </div>
+
+                                        <div className="flex bg-black/40 rounded-lg p-1 border border-white/10 shadow-inner">
+                                            <button onClick={() => setSummaryLang('EN')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'EN' ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>ENG</button>
+                                            <button onClick={() => setSummaryLang('HI')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'HI' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>HING</button>
+                                            <button onClick={() => setSummaryLang('SPEAKER')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'SPEAKER' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>BY SPEAKER</button>
+                                        </div>
+
+                                        {summaryLang === 'SPEAKER' && (
+                                            <div className="flex bg-black/40 rounded-lg p-1 border border-white/10 shadow-inner">
+                                                <button onClick={() => setSpeakerLang('E')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${speakerLang === 'E' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>E</button>
+                                                <button onClick={() => setSpeakerLang('H')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${speakerLang === 'H' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>H</button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="text-[14px] text-gray-300 leading-relaxed bg-orange-900/10 p-6 rounded-xl border border-orange-500/20 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
-                                    {speakerLang === 'E' ? (summaryDataSpeakers || "Speaker-wise english summary is loading or not available. Re-process video to generate.") : (summaryDataSpeakersHi || "Speaker-wise hinglish summary is loading or not available. Re-process video to generate.")}
-                                </div>
+
+                                {summaryLang === 'EN' ? (
+                                    <div className="text-[14px] text-gray-300 leading-relaxed bg-white/5 p-6 rounded-xl border border-white/5 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
+                                        {summaryData || "No summary available."}
+                                    </div>
+                                ) : summaryLang === 'HI' ? (
+                                    <div className="text-[14px] text-gray-300 leading-relaxed bg-green-900/10 p-6 rounded-xl border border-green-500/20 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
+                                        {summaryDataHi || "Hinglish summary is loading or not available. Re-process video to generate."}
+                                    </div>
+                                ) : (
+                                    <div className="text-[14px] text-gray-300 leading-relaxed bg-orange-900/10 p-6 rounded-xl border border-orange-500/20 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
+                                        {speakerLang === 'E' ? (summaryDataSpeakers || "Speaker-wise english summary is loading or not available. Re-process video to generate.") : (summaryDataSpeakersHi || "Speaker-wise hinglish summary is loading or not available. Re-process video to generate.")}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -678,7 +755,8 @@ export default function InsightsPage() {
                         </div>
                     </div>
                 </div>
-            )}
+            )
+            }
 
             <style jsx global>{`
                 .custom-scrollbar::-webkit-scrollbar {
