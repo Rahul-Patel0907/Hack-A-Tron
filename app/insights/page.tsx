@@ -1,11 +1,18 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Play, Copy, Download, ChevronDown, MessageSquare, ListTree, AlignLeft, Settings, Sparkles, Check, X, ShieldAlert, Target, HeartPulse, Activity, BarChart2, Search, Send, Bot, User } from 'lucide-react';
+import { ArrowLeft, Play, Copy, Download, ChevronDown, MessageSquare, ListTree, AlignLeft, Settings, Sparkles, Check, X, ShieldAlert, Target, HeartPulse, Activity, BarChart2, Search, Send, Bot, User, Mail, ListTodo } from 'lucide-react';
 import Link from 'next/link';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { saveAs } from 'file-saver';
+import jsPDF from 'jspdf';
 import PastSummaries from '../Components/PastSummaries';
+import { ShareTab } from './components/ShareTab';
+import { TicketsTab } from './components/TicketsTab';
+import { IntelligenceTab } from './components/IntelligenceTab';
+import { ChatTab } from './components/ChatTab';
+import { SummaryTab } from './components/SummaryTab';
+import { NotesTab } from './components/NotesTab';
 
 export default function InsightsPage() {
     const [summaryLang, setSummaryLang] = useState<'EN' | 'HI' | 'SPEAKER'>('EN');
@@ -19,13 +26,16 @@ export default function InsightsPage() {
     const [videoUrl, setVideoUrl] = useState<string>('');
     const [videoName, setVideoName] = useState<string>('Meeting Recording.mp4');
     const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'transcript' | 'chapters'>('transcript');
-    const [rightView, setRightView] = useState<'summary' | 'intelligence' | 'chat'>('summary');
+    const [activeTab, setActiveTab] = useState<'transcript' | 'chapters' | 'notes'>('transcript');
+    const [notesData, setNotesData] = useState<{ id: string, text: string, timecode: number }[]>([]);
+    const [rightView, setRightView] = useState<'summary' | 'intelligence' | 'chat' | 'share' | 'tickets'>('summary');
     const [intelligenceData, setIntelligenceData] = useState<any>(null);
     const [copied, setCopied] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [nameMap, setNameMap] = useState<Record<string, string>>({});
     const [searchQuery, setSearchQuery] = useState('');
+    const [isDownloadDropdownOpen, setIsDownloadDropdownOpen] = useState(false);
+    const [isTranscriptDownloadDropdownOpen, setIsTranscriptDownloadDropdownOpen] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
 
     // Chat states
@@ -99,6 +109,7 @@ export default function InsightsPage() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        setIsTranscriptDownloadDropdownOpen(false);
     };
 
     const handleDownloadDocx = async () => {
@@ -134,6 +145,63 @@ export default function InsightsPage() {
 
         const blob = await Packer.toBlob(doc);
         saveAs(blob, filename);
+        setIsTranscriptDownloadDropdownOpen(false);
+    };
+
+    const handleDownloadPdf = () => {
+        const doc = new jsPDF();
+        let yPos = 20;
+
+        doc.setFontSize(16);
+        let titleStr = '';
+        let filename = '';
+
+        if (activeTab === 'transcript') {
+            if (!transcriptData.length) return;
+            titleStr = "Transcript";
+            filename = videoName.replace(/\.[^/.]+$/, "") + "_transcript.pdf";
+        } else {
+            if (!chaptersData.length) return;
+            titleStr = "Chapters";
+            filename = videoName.replace(/\.[^/.]+$/, "") + "_chapters.pdf";
+        }
+
+        doc.text(titleStr, 15, yPos);
+        yPos += 15;
+
+        doc.setFontSize(11);
+
+        const addTextWithWrap = (text: string, x: number, lineSpacing: number = 7) => {
+            const lines = doc.splitTextToSize(text, 180);
+            lines.forEach((line: string) => {
+                if (yPos > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                doc.text(line, x, yPos);
+                yPos += lineSpacing;
+            });
+        };
+
+        if (activeTab === 'transcript') {
+            transcriptData.forEach(t => {
+                const prefix = `${t.speaker} [${formatTime(t.start)}]: `;
+                addTextWithWrap(`${prefix}${t.text}`, 15);
+                yPos += 3; // add a little extra spacing between speakers
+            });
+        } else {
+            chaptersData.forEach(c => {
+                doc.setFontSize(12);
+                addTextWithWrap(`${c.headline} [${formatTime(c.start)}]`, 15);
+
+                doc.setFontSize(11);
+                addTextWithWrap(c.summary, 15);
+                yPos += 5;
+            });
+        }
+
+        doc.save(filename);
+        setIsTranscriptDownloadDropdownOpen(false);
     };
 
     const getSummaryContent = () => {
@@ -158,6 +226,7 @@ export default function InsightsPage() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        setIsDownloadDropdownOpen(false);
     };
 
     const handleSummaryDownloadDocx = async () => {
@@ -175,6 +244,117 @@ export default function InsightsPage() {
 
         const blob = await Packer.toBlob(doc);
         saveAs(blob, videoName.replace(/\.[^/.]+$/, "") + "_summary.docx");
+        setIsDownloadDropdownOpen(false);
+    };
+
+    const handleSummaryDownloadPdf = () => {
+        const content = getSummaryContent();
+        if (!content) return;
+
+        const doc = new jsPDF();
+        const lines = doc.splitTextToSize(content, 180); // wrap text for A4 page width
+        let yPos = 20;
+
+        doc.setFontSize(16);
+        doc.text("Meeting Summary", 15, yPos);
+        yPos += 15;
+
+        doc.setFontSize(11);
+        lines.forEach((line: string) => {
+            if (yPos > 280) { // new page if text goes off margin
+                doc.addPage();
+                yPos = 20;
+            }
+            doc.text(line, 15, yPos);
+            yPos += 7;
+        });
+
+        doc.save(videoName.replace(/\.[^/.]+$/, "") + "_summary.pdf");
+        setIsDownloadDropdownOpen(false);
+    };
+
+    const handleShareToOutlook = () => {
+        const doc = new jsPDF();
+        let yPos = 20;
+
+        doc.setFontSize(22);
+        doc.text("Meeting Intelligence Report", 15, yPos);
+        yPos += 12;
+
+        doc.setFontSize(12);
+        doc.setTextColor(100);
+        doc.text(`File: ${videoName.replace(/\.[^/.]+$/, "")}`, 15, yPos);
+        yPos += 15;
+        doc.setTextColor(0);
+
+        const addTextWithWrap = (text: string, x: number, lineSpacing: number = 7) => {
+            const lines = doc.splitTextToSize(text, 180);
+            lines.forEach((line: string) => {
+                if (yPos > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                doc.text(line, x, yPos);
+                yPos += lineSpacing;
+            });
+        };
+
+        // 1. Summary
+        if (summaryData) {
+            doc.setFontSize(16);
+            doc.text("1. Overall Summary", 15, yPos);
+            yPos += 10;
+            doc.setFontSize(11);
+            addTextWithWrap(summaryData, 15);
+            yPos += 10;
+        }
+
+        // 2. Speaker Summary
+        if (summaryDataSpeakers) {
+            doc.setFontSize(16);
+            if (yPos > 250) { doc.addPage(); yPos = 20; }
+            doc.text("2. Summary by Speaker", 15, yPos);
+            yPos += 10;
+            doc.setFontSize(11);
+            addTextWithWrap(summaryDataSpeakers, 15);
+            yPos += 10;
+        }
+
+        // 3. Action Items (if any)
+        if (intelligenceData?.action_items && intelligenceData.action_items.length > 0) {
+            doc.setFontSize(16);
+            if (yPos > 250) { doc.addPage(); yPos = 20; }
+            doc.text("3. Action Items", 15, yPos);
+            yPos += 10;
+            doc.setFontSize(11);
+            intelligenceData.action_items.forEach((item: any) => {
+                addTextWithWrap(`• Task: ${item.task} (Owner: ${item.owner || 'Unassigned'}) [${item.risk_level || 'Medium'} Risk]`, 15);
+                yPos += 2;
+            });
+            yPos += 10;
+        }
+
+        // 4. Transcript
+        if (transcriptData && transcriptData.length > 0) {
+            doc.setFontSize(16);
+            if (yPos > 250) { doc.addPage(); yPos = 20; }
+            doc.text("4. Full Transcript", 15, yPos);
+            yPos += 10;
+            doc.setFontSize(10);
+            transcriptData.forEach(t => {
+                const prefix = `${t.speaker} [${formatTime(t.start)}]: `;
+                addTextWithWrap(`${prefix}${t.text}`, 15, 6);
+                yPos += 3;
+            });
+        }
+
+        const filename = videoName.replace(/\.[^/.]+$/, "") + "_Full_Report.pdf";
+        doc.save(filename);
+
+        const subject = encodeURIComponent(`Meeting Report: ${videoName.replace(/\.[^/.]+$/, "")}`);
+        const body = encodeURIComponent(`Hi Team,\n\nPlease find attached the complete meeting intelligence report containing the transcripts, summaries, and action items for "${videoName.replace(/\.[^/.]+$/, "")}".\n\nEnsure to attach the automatically downloaded PDF ("${filename}") before sending.\n\nBest Regards,\nAI Meeting Assistant`);
+
+        window.location.href = `mailto:?subject=${subject}&body=${body}`;
     };
 
     const handleOpenSettings = () => {
@@ -200,7 +380,8 @@ export default function InsightsPage() {
 
         const newTranscript = transcriptData.map(t => ({
             ...t,
-            speaker: nameMap[t.speaker] && nameMap[t.speaker].trim() !== '' ? nameMap[t.speaker] : t.speaker
+            speaker: nameMap[t.speaker] && nameMap[t.speaker].trim() !== '' ? nameMap[t.speaker] : t.speaker,
+            text: replaceNamesInText(t.text, nameMap)
         }));
 
         const newChapters = chaptersData.map(c => ({
@@ -337,8 +518,23 @@ export default function InsightsPage() {
         const storedVideoName = localStorage.getItem('videoName');
         if (storedVideoName) setVideoName(storedVideoName);
 
+        const storedNotes = localStorage.getItem('meetingNotes');
+        if (storedNotes) {
+            try {
+                setNotesData(JSON.parse(storedNotes));
+            } catch (error) {
+                console.error("Error parsing stored notes", error);
+            }
+        }
+
         setIsLoading(false);
     }, []);
+
+    useEffect(() => {
+        if (!isLoading) {
+            localStorage.setItem('meetingNotes', JSON.stringify(notesData));
+        }
+    }, [notesData, isLoading]);
 
     return (
         <div className="h-screen overflow-hidden bg-[#0a0a0f] text-gray-200 antialiased selection:bg-blue-500/30 font-sans flex flex-col">
@@ -385,9 +581,10 @@ export default function InsightsPage() {
                     <div className="flex flex-col bg-[#0f0f15]">
                         {/* Tabs & Search */}
                         <div className="flex flex-wrap items-center justify-between px-4 py-3 border-b border-white/5 bg-black/40 sticky top-0 z-10 backdrop-blur-md gap-4">
-                            <div className="flex gap-2 bg-white/5 p-1 rounded-lg shrink-0">
-                                <button onClick={() => setActiveTab('transcript')} className={`text-sm font-medium transition-colors px-4 py-1.5 rounded-md ${activeTab === 'transcript' ? 'text-white shadow bg-white/10' : 'text-gray-500 hover:text-white'}`}>Transcript</button>
-                                <button onClick={() => setActiveTab('chapters')} className={`text-sm font-medium transition-colors px-4 py-1.5 rounded-md ${activeTab === 'chapters' ? 'text-white shadow bg-white/10' : 'text-gray-500 hover:text-white'}`}>Chapters</button>
+                            <div className="flex gap-2 bg-white/5 p-1 rounded-lg shrink-0 overflow-x-auto no-scrollbar">
+                                <button onClick={() => setActiveTab('transcript')} className={`text-sm font-medium transition-colors px-4 py-1.5 rounded-md whitespace-nowrap ${activeTab === 'transcript' ? 'text-white shadow bg-white/10' : 'text-gray-500 hover:text-white'}`}>Transcript</button>
+                                <button onClick={() => setActiveTab('chapters')} className={`text-sm font-medium transition-colors px-4 py-1.5 rounded-md whitespace-nowrap ${activeTab === 'chapters' ? 'text-white shadow bg-white/10' : 'text-gray-500 hover:text-white'}`}>Chapters</button>
+                                <button onClick={() => setActiveTab('notes')} className={`text-sm font-medium transition-colors px-4 py-1.5 rounded-md whitespace-nowrap ${activeTab === 'notes' ? 'text-white shadow bg-white/10' : 'text-gray-500 hover:text-white'}`}>Notes</button>
                             </div>
 
                             {activeTab === 'transcript' && (
@@ -407,12 +604,38 @@ export default function InsightsPage() {
                                 <span title="Copy Text" className="flex">
                                     {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy onClick={handleCopy} className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />}
                                 </span>
-                                <div className="flex bg-black/40 rounded items-center border border-white/10 overflow-hidden">
-                                    <span className="px-2 py-1 border-r border-white/10">
-                                        <Download className="w-3.5 h-3.5" />
-                                    </span>
-                                    <button onClick={handleDownloadTxt} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors border-r border-white/10" title="Download TXT">TXT</button>
-                                    <button onClick={handleDownloadDocx} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors" title="Download DOCX">DOCX</button>
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setIsTranscriptDownloadDropdownOpen(!isTranscriptDownloadDropdownOpen)}
+                                        className="flex bg-black/40 rounded items-center border border-white/10 overflow-hidden hover:bg-white/10 transition-colors px-3 py-1.5 text-gray-400 group"
+                                    >
+                                        <Download className="w-4 h-4 group-hover:text-white transition-colors" />
+                                    </button>
+
+                                    {isTranscriptDownloadDropdownOpen && (
+                                        <div className="absolute right-0 mt-2 w-32 bg-[#1a1a24] border border-white/10 rounded-lg shadow-2xl overflow-hidden z-[100] animate-in slide-in-from-top-2 duration-200">
+                                            <div className="flex flex-col">
+                                                <button
+                                                    onClick={handleDownloadTxt}
+                                                    className="text-left px-4 py-2.5 text-xs font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors border-b border-white/5"
+                                                >
+                                                    Download TXT
+                                                </button>
+                                                <button
+                                                    onClick={handleDownloadDocx}
+                                                    className="text-left px-4 py-2.5 text-xs font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors border-b border-white/5"
+                                                >
+                                                    Download DOCX
+                                                </button>
+                                                <button
+                                                    onClick={handleDownloadPdf}
+                                                    className="text-left px-4 py-2.5 text-xs font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+                                                >
+                                                    Download PDF
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                                 <span title="Edit Speakers" className="flex">
                                     <Settings onClick={handleOpenSettings} className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />
@@ -424,6 +647,14 @@ export default function InsightsPage() {
                         <div className="p-4 space-y-6 scroll-smooth">
                             {isLoading ? (
                                 <p className="text-gray-500 text-center mt-10">Loading data...</p>
+                            ) : activeTab === 'notes' ? (
+                                <NotesTab
+                                    notes={notesData}
+                                    setNotes={setNotesData}
+                                    videoRef={videoRef}
+                                    formatTime={formatTime}
+                                    handleJumpToTime={handleJumpToTime}
+                                />
                             ) : activeTab === 'transcript' ? (
                                 (searchQuery ? transcriptData.filter(item => item.text.toLowerCase().includes(searchQuery.toLowerCase()) || item.speaker.toLowerCase().includes(searchQuery.toLowerCase())) : transcriptData).length > 0 ? (
                                     (searchQuery ? transcriptData.filter(item => item.text.toLowerCase().includes(searchQuery.toLowerCase()) || item.speaker.toLowerCase().includes(searchQuery.toLowerCase())) : transcriptData).map((item, index) => (
@@ -480,6 +711,16 @@ export default function InsightsPage() {
                             className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-all ${rightView === 'chat' ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/30' : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'}`}>
                             <MessageSquare className="w-4 h-4" /> Chatbot
                         </button>
+                        <button
+                            onClick={() => setRightView('share')}
+                            className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-all ${rightView === 'share' ? 'bg-orange-600/20 text-orange-400 border-orange-500/30' : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'}`}>
+                            <Mail className="w-4 h-4" /> Share
+                        </button>
+                        <button
+                            onClick={() => setRightView('tickets')}
+                            className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-all ${rightView === 'tickets' ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/30' : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'}`}>
+                            <ListTodo className="w-4 h-4" /> Tickets
+                        </button>
                     </div>
 
                     {/* Summary Content Body */}
@@ -488,231 +729,37 @@ export default function InsightsPage() {
                             <div className="flex items-center justify-center h-full">
                                 <p className="text-gray-400">Loading insights...</p>
                             </div>
+                        ) : rightView === 'share' ? (
+                            <ShareTab handleShareToOutlook={handleShareToOutlook} />
+                        ) : rightView === 'tickets' ? (
+                            <TicketsTab intelligenceData={intelligenceData} />
                         ) : rightView === 'intelligence' ? (
-                            <div className="animate-in fade-in duration-300 flex flex-col gap-6">
-                                {intelligenceData ? (
-                                    <>
-                                        {/* Health Score */}
-                                        <div className="bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 p-6 rounded-2xl flex items-center justify-between shadow-lg">
-                                            <div>
-                                                <h3 className="text-xl font-bold flex items-center gap-2 text-white mb-2"><HeartPulse className="text-purple-400 w-6 h-6" /> Meeting Health Score</h3>
-                                                <div className="flex flex-col md:flex-row gap-6 mt-4 text-sm">
-                                                    <div>
-                                                        <span className="text-green-400 font-bold mb-2 flex items-center gap-1"><Check className="w-4 h-4" /> Strengths</span>
-                                                        <ul className="text-gray-300 space-y-2 list-none">
-                                                            {intelligenceData.health?.strengths?.map((s: string, i: number) => <li key={i} className="flex gap-2"><span>+</span>{s}</li>)}
-                                                        </ul>
-                                                    </div>
-                                                    <div>
-                                                        <span className="text-red-400 font-bold mb-2 flex items-center gap-1"><X className="w-4 h-4" /> Weaknesses</span>
-                                                        <ul className="text-gray-300 space-y-2 list-none">
-                                                            {intelligenceData.health?.weaknesses?.map((w: string, i: number) => <li key={i} className="flex gap-2"><span>-</span>{w}</li>)}
-                                                        </ul>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex shrink-0 w-28 h-28 ml-6 rounded-full border-4 border-purple-500/30 items-center justify-center relative shadow-[0_0_40px_rgba(168,85,247,0.3)] bg-black/60">
-                                                <span className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-br from-white to-gray-400">{intelligenceData.health?.score}</span>
-                                                <span className="text-gray-500 absolute bottom-4 text-xs font-bold">/ 10</span>
-                                            </div>
-                                        </div>
-
-                                        {/* Missed Signals */}
-                                        <div className="bg-orange-950/20 border border-orange-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden">
-                                            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl"></div>
-                                            <h3 className="text-lg font-bold flex items-center gap-2 text-orange-400 mb-4 relative z-10"><ShieldAlert className="w-5 h-5" /> Missed Signals</h3>
-                                            <ul className="space-y-3 relative z-10">
-                                                {intelligenceData.missed_signals?.map((signal: string, i: number) => (
-                                                    <li key={i} className="flex gap-3 text-sm text-gray-200 bg-black/40 p-3.5 rounded-xl border border-white/5">
-                                                        <span className="text-orange-500 shrink-0 text-base">⚠️</span> {signal}
-                                                    </li>
-                                                ))}
-                                                {(!intelligenceData.missed_signals || intelligenceData.missed_signals.length === 0) && (
-                                                    <p className="text-gray-500 text-sm">No missed signals detected.</p>
-                                                )}
-                                            </ul>
-                                        </div>
-
-                                        {/* Smart Action Items */}
-                                        <div className="bg-blue-950/20 border border-blue-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden">
-                                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl"></div>
-                                            <h3 className="text-lg font-bold flex items-center gap-2 text-blue-400 mb-4 relative z-10"><Target className="w-5 h-5" /> Smart Action Items</h3>
-                                            <div className="space-y-3 relative z-10">
-                                                {intelligenceData.action_items?.map((item: any, i: number) => (
-                                                    <div key={i} className="flex flex-col gap-2.5 text-sm bg-black/40 p-4 rounded-xl border border-white/5 hover:border-blue-500/30 transition-colors">
-                                                        <div className="flex justify-between items-start gap-4">
-                                                            <div className="font-semibold text-gray-100 text-base">{item.task}</div>
-                                                            <span className={`text-[10px] uppercase font-black px-2.5 py-1 rounded-md shrink-0 border tracking-wider ${item.risk_level?.toLowerCase() === 'high' ? 'bg-red-500/10 text-red-400 border-red-500/30' :
-                                                                item.risk_level?.toLowerCase() === 'medium' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30' :
-                                                                    'bg-green-500/10 text-green-400 border-green-500/30'
-                                                                }`}>{item.risk_level} RISK</span>
-                                                        </div>
-                                                        <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs mt-1">
-                                                            <span className="text-gray-300 flex items-center gap-1.5"><strong className="text-gray-500 bg-black/50 px-1.5 py-0.5 rounded">Owner</strong> {item.owner || "Unassigned"}</span>
-                                                            <span className="text-gray-300 flex items-center gap-1.5"><strong className="text-gray-500 bg-black/50 px-1.5 py-0.5 rounded">Deadline</strong> {item.deadline || "None"}</span>
-                                                        </div>
-                                                        {item.risk_reason && (
-                                                            <div className="text-xs text-gray-400 mt-2 bg-black/20 p-2 rounded border border-white/5">
-                                                                <strong className="text-gray-500">Risk Context:</strong> {item.risk_reason}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                                {(!intelligenceData.action_items || intelligenceData.action_items.length === 0) && (
-                                                    <p className="text-gray-500 text-sm">No action items detected.</p>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Speaker Analytics */}
-                                        {intelligenceData.speaker_metrics?.speakers && intelligenceData.speaker_metrics.speakers.length > 0 && (
-                                            <div className="bg-emerald-950/20 border border-emerald-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden">
-                                                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl"></div>
-                                                <h3 className="text-lg font-bold flex items-center gap-2 text-emerald-400 mb-4 relative z-10"><BarChart2 className="w-5 h-5" /> Speaker Analytics</h3>
-
-                                                <div className="space-y-4 relative z-10">
-                                                    {intelligenceData.speaker_metrics.speakers.map((spk: any, i: number) => (
-                                                        <div key={i} className="flex flex-col gap-1 text-sm bg-black/40 p-4 rounded-xl border border-white/5">
-                                                            <div className="flex justify-between items-center mb-1">
-                                                                <span className="font-semibold text-gray-100">{spk.name}</span>
-                                                                <span className="text-emerald-400 font-bold">{spk.percentage}%</span>
-                                                            </div>
-                                                            {/* Progress Bar */}
-                                                            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                                                                <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000 ease-out" style={{ width: `${spk.percentage}%` }}></div>
-                                                            </div>
-
-                                                            <div className="flex justify-between items-center mt-2 text-xs text-gray-400">
-                                                                <span className="flex items-center gap-1.5"><strong className="text-gray-500 bg-black/50 px-1.5 py-0.5 rounded">Total Time</strong> {formatTime(spk.total_time)}</span>
-                                                                <span className="flex items-center gap-1.5"><strong className="text-gray-500 bg-black/50 px-1.5 py-0.5 rounded">Longest Monologue</strong> {formatTime(spk.longest_monologue)}</span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-
-                                                    <div className="flex items-center justify-between text-xs mt-4 pt-4 border-t border-white/5">
-                                                        <span className="text-gray-400">Detected Interruptions & Overlaps:</span>
-                                                        <span className="text-orange-400 font-bold bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/30">{intelligenceData.speaker_metrics.interruptions}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </>
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-                                        <Activity className="w-12 h-12 text-gray-600 mb-2" />
-                                        <h3 className="text-xl font-bold text-gray-200">No Intelligence Available</h3>
-                                        <p className="text-gray-400 max-w-sm">This video was processed before we added the new Advanced Intelligence engine.</p>
-                                        <p className="text-sm text-gray-500 mt-2 px-4 py-2 bg-white/5 rounded-lg border border-white/10">Please re-upload a video to generate the meeting health score, missed signals, and smart tasks.</p>
-                                    </div>
-                                )}
-                            </div>
+                            <IntelligenceTab intelligenceData={intelligenceData} formatTime={formatTime} />
                         ) : rightView === 'chat' ? (
-                            <div className="flex flex-col h-full bg-[#0a0a0f] rounded-2xl border border-white/10 shadow-lg overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-                                {/* Chat Header */}
-                                <div className="bg-emerald-500/10 border-b border-white/5 px-6 py-4 flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                                        <Bot className="w-5 h-5 text-emerald-400" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-white font-bold tracking-tight">MeetMiner AI Assistant</h3>
-                                        <p className="text-xs text-emerald-400/80 font-medium tracking-wide">Ready to answer questions about this meeting</p>
-                                    </div>
-                                </div>
-
-                                {/* Messages Container */}
-                                <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-gradient-to-b from-[#0a0a0f] to-black/80">
-                                    {chatMessages.map((msg, i) => (
-                                        <div key={i} className={`flex items-start gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                                            <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg ${msg.role === 'user' ? 'bg-gradient-to-br from-blue-500 to-purple-600' : 'bg-emerald-500/20 border border-emerald-500/30'}`}>
-                                                {msg.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4 text-emerald-400" />}
-                                            </div>
-                                            <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed shadow-md ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-[#1a1a24] text-gray-200 border border-white/5 rounded-tl-none font-sans whitespace-pre-wrap'}`}>
-                                                {msg.text}
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {isChatProcessing && (
-                                        <div className="flex items-start gap-4">
-                                            <div className="shrink-0 w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-                                                <Bot className="w-4 h-4 text-emerald-400" />
-                                            </div>
-                                            <div className="p-4 rounded-2xl bg-[#1a1a24] text-gray-400 border border-white/5 rounded-tl-none flex gap-2">
-                                                <div className="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                                <div className="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                                <div className="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Chat Input Box */}
-                                <div className="p-4 bg-black/40 border-t border-white/10">
-                                    <div className="relative flex items-center">
-                                        <input
-                                            type="text"
-                                            value={chatInput}
-                                            onChange={(e) => setChatInput(e.target.value)}
-                                            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                                            disabled={isChatProcessing}
-                                            placeholder="Ask something like 'What were the action items for Emma?'"
-                                            className="w-full bg-[#111116] border border-white/10 focus:border-emerald-500/50 rounded-xl px-5 py-3.5 pr-14 text-sm text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner disabled:opacity-50"
-                                        />
-                                        <button
-                                            onClick={handleSendMessage}
-                                            disabled={isChatProcessing || !chatInput.trim()}
-                                            className="absolute right-2 p-2 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 hover:text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                        >
-                                            <Send className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                    <p className="text-[10px] text-gray-500 text-center mt-3 font-medium tracking-wide">AI can make mistakes. Verify important information with the raw transcript.</p>
-                                </div>
-                            </div>
+                            <ChatTab
+                                chatMessages={chatMessages}
+                                chatScrollRef={chatScrollRef}
+                                isChatProcessing={isChatProcessing}
+                                chatInput={chatInput}
+                                setChatInput={setChatInput}
+                                handleSendMessage={handleSendMessage}
+                            />
                         ) : (
-                            <div className="animate-in fade-in duration-300 h-full flex flex-col">
-                                <div className="flex flex-row items-center justify-between mb-6 flex-shrink-0 gap-4 w-full">
-                                    <h2 className={`text-xl xl:text-2xl font-bold tracking-tight border-l-4 pl-3 ${summaryLang === 'EN' ? 'text-white border-blue-500' : summaryLang === 'HI' ? 'text-white border-green-500' : 'text-white border-orange-500'} truncate mr-auto`}>
-                                        {summaryLang === 'EN' ? 'Summary of Video Content' : summaryLang === 'HI' ? 'Video Content ka Summary' : 'Speaker-wise Summary'}
-                                    </h2>
-
-                                    <div className="flex flex-nowrap items-center gap-3 shrink-0">
-                                        <div className="flex bg-black/40 rounded items-center border border-white/10 overflow-hidden">
-                                            <span className="px-2 py-1 border-r border-white/10 text-gray-400">
-                                                <Download className="w-3.5 h-3.5" />
-                                            </span>
-                                            <button onClick={handleSummaryDownloadTxt} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors border-r border-white/10" title="Download TXT">TXT</button>
-                                            <button onClick={handleSummaryDownloadDocx} className="px-2 py-1 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors" title="Download DOCX">DOCX</button>
-                                        </div>
-
-                                        <div className="flex bg-black/40 rounded-lg p-1 border border-white/10 shadow-inner">
-                                            <button onClick={() => setSummaryLang('EN')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'EN' ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>ENG</button>
-                                            <button onClick={() => setSummaryLang('HI')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'HI' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>HING</button>
-                                            <button onClick={() => setSummaryLang('SPEAKER')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${summaryLang === 'SPEAKER' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>BY SPEAKER</button>
-                                        </div>
-
-                                        {summaryLang === 'SPEAKER' && (
-                                            <div className="flex bg-black/40 rounded-lg p-1 border border-white/10 shadow-inner">
-                                                <button onClick={() => setSpeakerLang('E')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${speakerLang === 'E' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>E</button>
-                                                <button onClick={() => setSpeakerLang('H')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${speakerLang === 'H' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>H</button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {summaryLang === 'EN' ? (
-                                    <div className="text-[14px] text-gray-300 leading-relaxed bg-white/5 p-6 rounded-xl border border-white/5 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
-                                        {summaryData || "No summary available."}
-                                    </div>
-                                ) : summaryLang === 'HI' ? (
-                                    <div className="text-[14px] text-gray-300 leading-relaxed bg-green-900/10 p-6 rounded-xl border border-green-500/20 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
-                                        {summaryDataHi || "Hinglish summary is loading or not available. Re-process video to generate."}
-                                    </div>
-                                ) : (
-                                    <div className="text-[14px] text-gray-300 leading-relaxed bg-orange-900/10 p-6 rounded-xl border border-orange-500/20 whitespace-pre-wrap font-sans overflow-auto custom-scrollbar flex-1">
-                                        {speakerLang === 'E' ? (summaryDataSpeakers || "Speaker-wise english summary is loading or not available. Re-process video to generate.") : (summaryDataSpeakersHi || "Speaker-wise hinglish summary is loading or not available. Re-process video to generate.")}
-                                    </div>
-                                )}
-                            </div>
+                            <SummaryTab
+                                summaryLang={summaryLang}
+                                speakerLang={speakerLang}
+                                summaryData={summaryData}
+                                summaryDataHi={summaryDataHi}
+                                summaryDataSpeakers={summaryDataSpeakers}
+                                summaryDataSpeakersHi={summaryDataSpeakersHi}
+                                setSummaryLang={setSummaryLang}
+                                setSpeakerLang={setSpeakerLang}
+                                isDownloadDropdownOpen={isDownloadDropdownOpen}
+                                setIsDownloadDropdownOpen={setIsDownloadDropdownOpen}
+                                handleSummaryDownloadTxt={handleSummaryDownloadTxt}
+                                handleSummaryDownloadDocx={handleSummaryDownloadDocx}
+                                handleSummaryDownloadPdf={handleSummaryDownloadPdf}
+                            />
                         )}
                     </div>
                 </div>
