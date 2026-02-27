@@ -3,9 +3,12 @@
 import React, { useState } from 'react';
 import { ScanFace, UploadCloud, FileVideo, ArrowLeft, CheckCircle, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+import PastSummaries from '../Components/PastSummaries';
 
 export default function UploadPage() {
+    const router = useRouter();
     const [isDragging, setIsDragging] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState(0);
@@ -14,11 +17,8 @@ export default function UploadPage() {
 
     const loadingMessages = [
         "Uploading meeting recording...",
-        "Extracting the juicy audio...",
         "Transcribing speech with AI magic...",
         "Analyzing meeting health score...",
-        "Hunting for missed signals...",
-        "Are these action items? Extracting...",
         "Whoa, this is a long one. Keep holding...",
         "Our GPU servers are sweating right now 🥵",
         "Did you upload a feature film?! 🎥",
@@ -31,6 +31,7 @@ export default function UploadPage() {
     ];
 
     React.useEffect(() => {
+
         let interval: ReturnType<typeof setInterval>;
         if (uploading && progress < 100) {
             interval = setInterval(() => {
@@ -84,6 +85,22 @@ export default function UploadPage() {
             localStorage.setItem('videoName', file.name);
             localStorage.setItem('videoObjectUrl', URL.createObjectURL(file));
 
+            // Save basic summary to 24-hour history
+            if (data.summary) {
+                const newHistoryItem = {
+                    id: Date.now().toString(),
+                    fileName: file.name,
+                    timestamp: Date.now(),
+                    summary: data.summary,
+                    fullData: data
+                };
+                try {
+                    const existing = JSON.parse(localStorage.getItem('meetingHistory') || '[]');
+                    const updated = [newHistoryItem, ...existing];
+                    localStorage.setItem('meetingHistory', JSON.stringify(updated));
+                } catch (e) { }
+            }
+
             clearInterval(interval);
             setProgress(100);
             setTimeout(() => setUploading(false), 500); // Give it a moment to show 100%
@@ -130,9 +147,12 @@ export default function UploadPage() {
                         <ScanFace className="w-6 h-6 text-blue-400" />
                         <span className="text-xl font-bold tracking-tight text-white">Meet<span className="text-blue-400">Miner</span></span>
                     </Link>
-                    <Link href="/" className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
-                        <ArrowLeft className="w-4 h-4" /> Back
-                    </Link>
+                    <div className="flex items-center gap-4">
+                        <PastSummaries />
+                        <Link href="/" className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
+                            <ArrowLeft className="w-4 h-4" /> Back
+                        </Link>
+                    </div>
                 </div>
             </nav>
 
@@ -221,6 +241,7 @@ export default function UploadPage() {
                     )}
                 </div>
             </div>
+
         </div>
     );
 }

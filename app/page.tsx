@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScanFace } from 'lucide-react';
 import HeroSection from './Components/HeroSection';
+import PastSummaries from './Components/PastSummaries';
 
 export default function LandingPage() {
   return (
@@ -17,6 +18,9 @@ export default function LandingPage() {
           <div className="flex items-center gap-2">
             <ScanFace className="w-6 h-6 text-blue-400" />
             <span className="text-xl font-bold tracking-tight text-white">Meet<span className="text-blue-400">Miner</span></span>
+          </div>
+          <div className="flex items-center gap-4">
+            <PastSummaries />
           </div>
         </div>
       </nav>
