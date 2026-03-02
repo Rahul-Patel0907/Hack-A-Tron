@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
-import PastSummaries from '../Components/PastSummaries';
 import { ShareTab } from './components/ShareTab';
 import { TicketsTab } from './components/TicketsTab';
 import { IntelligenceTab } from './components/IntelligenceTab';
@@ -357,6 +356,32 @@ export default function InsightsPage() {
         window.location.href = `mailto:?subject=${subject}&body=${body}`;
     };
 
+    const handleShareToTeams = async () => {
+        let teamsMessage = `**Meeting Report: ${videoName.replace(/\.[^/.]+$/, "")}**\n\n`;
+        teamsMessage += `*Summary:*\n${summaryData || 'No summary available.'}\n\n`;
+
+        if (intelligenceData?.action_items && intelligenceData.action_items.length > 0) {
+            teamsMessage += `*Action Items:*\n`;
+            intelligenceData.action_items.forEach((item: any) => {
+                teamsMessage += `- ${item.task} (Owner: ${item.owner || 'Unassigned'}) -> ${item.risk_level} Risk\n`;
+            });
+            teamsMessage += `\n`;
+        }
+
+        const formattedMessage = teamsMessage.replace(/\n/g, '\r\n');
+
+        try {
+            await navigator.clipboard.writeText(formattedMessage);
+        } catch (err) {
+            console.error("Failed to copy transcript to clipboard:", err);
+        }
+
+        const shortMsg = `Meeting Report: ${videoName.replace(/\.[^/.]+$/, "")} - (Full details copied to clipboard!)`;
+        const encodedMessage = encodeURIComponent(shortMsg);
+        const teamsUrl = `https://teams.microsoft.com/share?href=&msgText=${encodedMessage}`;
+        window.open(teamsUrl, '_blank', 'noopener,noreferrer');
+    };
+
     const handleOpenSettings = () => {
         const uniqueSpeakers = Array.from(new Set(transcriptData.map(t => t.speaker)));
         const initialMap: Record<string, string> = {};
@@ -367,11 +392,12 @@ export default function InsightsPage() {
 
     const handleSaveSettings = () => {
         const replaceNamesInText = (text: string, map: Record<string, string>) => {
+            if (!text) return text;
             let newText = text;
             for (const [oldName, newName] of Object.entries(map)) {
                 if (oldName !== newName && newName.trim() !== '') {
                     const escapedOldName = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const regex = new RegExp(escapedOldName, 'g');
+                    const regex = new RegExp(`\\b${escapedOldName}\\b`, 'gi');
                     newText = newText.replace(regex, newName);
                 }
             }
@@ -428,6 +454,14 @@ export default function InsightsPage() {
                 newIntelligence.speaker_metrics.speakers = newIntelligence.speaker_metrics.speakers.map((spk: any) => ({
                     ...spk,
                     name: replaceNamesInText(spk.name, nameMap)
+                }));
+            }
+
+            // Replace names in sentiment speaker moods
+            if (newIntelligence.sentiment && newIntelligence.sentiment.speaker_moods) {
+                newIntelligence.sentiment.speaker_moods = newIntelligence.sentiment.speaker_moods.map((sm: any) => ({
+                    ...sm,
+                    name: nameMap[sm.name] && nameMap[sm.name].trim() !== '' ? nameMap[sm.name] : replaceNamesInText(sm.name, nameMap)
                 }));
             }
         }
@@ -550,7 +584,7 @@ export default function InsightsPage() {
                     </h1>
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
-                    <PastSummaries />
+
                 </div>
             </nav>
 
@@ -730,7 +764,10 @@ export default function InsightsPage() {
                                 <p className="text-gray-400">Loading insights...</p>
                             </div>
                         ) : rightView === 'share' ? (
-                            <ShareTab handleShareToOutlook={handleShareToOutlook} />
+                            <ShareTab
+                                handleShareToOutlook={handleShareToOutlook}
+                                handleShareToTeams={handleShareToTeams}
+                            />
                         ) : rightView === 'tickets' ? (
                             <TicketsTab intelligenceData={intelligenceData} />
                         ) : rightView === 'intelligence' ? (

@@ -83,7 +83,7 @@ export default function UploadPage() {
             // Save the data to be used by the /insights page
             localStorage.setItem('meetingInsights', JSON.stringify(data));
             localStorage.setItem('videoName', file.name);
-            localStorage.setItem('videoObjectUrl', URL.createObjectURL(file));
+            localStorage.setItem('videoObjectUrl', data.video_url || URL.createObjectURL(file));
 
             // Save basic summary to 24-hour history
             if (data.summary) {
@@ -92,7 +92,8 @@ export default function UploadPage() {
                     fileName: file.name,
                     timestamp: Date.now(),
                     summary: data.summary,
-                    fullData: data
+                    fullData: data,
+                    videoUrl: data.video_url || URL.createObjectURL(file) // Storing persistent backend URL
                 };
                 try {
                     const existing = JSON.parse(localStorage.getItem('meetingHistory') || '[]');

@@ -10,6 +10,7 @@ export interface PastSummary {
     timestamp: number;
     summary: string;
     fullData?: any;
+    videoUrl?: string;
 }
 
 export default function PastSummaries() {
@@ -41,7 +42,11 @@ export default function PastSummaries() {
         }
         localStorage.setItem('meetingInsights', JSON.stringify(item.fullData));
         localStorage.setItem('videoName', item.fileName);
-        localStorage.removeItem('videoObjectUrl');
+        if (item.videoUrl) {
+            localStorage.setItem('videoObjectUrl', item.videoUrl);
+        } else {
+            localStorage.removeItem('videoObjectUrl');
+        }
         setIsOpen(false);
         router.push('/insights');
     };
@@ -75,12 +80,23 @@ export default function PastSummaries() {
                                         <FileText className="w-5 h-5 text-emerald-500" />
                                         {selectedHistoryItem.fileName}
                                     </h3>
-                                    <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-6 bg-white/5 w-fit px-2 py-1 rounded">
+                                    <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-4 bg-white/5 w-fit px-2 py-1 rounded">
                                         <Clock className="w-3.5 h-3.5" />
                                         {new Date(selectedHistoryItem.timestamp).toLocaleString(undefined, {
                                             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                                         })}
                                     </div>
+
+                                    {selectedHistoryItem.videoUrl && (
+                                        <div className="mb-6 rounded-xl overflow-hidden border border-white/10 shadow-lg relative bg-black aspect-video max-h-[250px] w-full flex items-center justify-center">
+                                            <video
+                                                src={selectedHistoryItem.videoUrl}
+                                                controls
+                                                className="w-full h-full object-contain"
+                                            />
+                                        </div>
+                                    )}
+
                                     <div className="bg-black/40 border border-white/5 p-6 rounded-2xl text-[15px] text-gray-300 leading-relaxed whitespace-pre-wrap font-sans">
                                         {selectedHistoryItem.summary}
                                     </div>

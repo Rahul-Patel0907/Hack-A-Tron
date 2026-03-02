@@ -36,6 +36,40 @@ export function IntelligenceTab({ intelligenceData, formatTime }: IntelligenceTa
                         </div>
                     </div>
 
+                    {/* Overall Sentiment */}
+                    {intelligenceData.sentiment && (
+                        <div className={`border p-6 rounded-2xl shadow-lg relative overflow-hidden transition-colors ${intelligenceData.sentiment.overall.toLowerCase() === 'positive' ? 'bg-green-950/20 border-green-500/20' :
+                                intelligenceData.sentiment.overall.toLowerCase() === 'negative' ? 'bg-red-950/20 border-red-500/20' :
+                                    intelligenceData.sentiment.overall.toLowerCase() === 'tense' ? 'bg-orange-950/20 border-orange-500/20' :
+                                        'bg-blue-950/20 border-blue-500/20' // Neutral fallback
+                            }`}>
+                            <div className="flex flex-col md:flex-row gap-6 md:items-center justify-between mb-4">
+                                <h3 className={`text-xl font-bold flex items-center gap-2 ${intelligenceData.sentiment.overall.toLowerCase() === 'positive' ? 'text-green-400' :
+                                        intelligenceData.sentiment.overall.toLowerCase() === 'negative' ? 'text-red-400' :
+                                            intelligenceData.sentiment.overall.toLowerCase() === 'tense' ? 'text-orange-400' :
+                                                'text-blue-400'
+                                    }`}>
+                                    {intelligenceData.sentiment.overall.toLowerCase() === 'positive' && "😊 "}
+                                    {intelligenceData.sentiment.overall.toLowerCase() === 'negative' && "😠 "}
+                                    {intelligenceData.sentiment.overall.toLowerCase() === 'tense' && "😬 "}
+                                    {(intelligenceData.sentiment.overall.toLowerCase() !== 'positive' && intelligenceData.sentiment.overall.toLowerCase() !== 'negative' && intelligenceData.sentiment.overall.toLowerCase() !== 'tense') && "😐 "}
+                                    {intelligenceData.sentiment.overall} Mood
+                                </h3>
+                                <div className="text-sm text-gray-300 italic max-w-md">"{intelligenceData.sentiment.reasoning}"</div>
+                            </div>
+
+                            {intelligenceData.sentiment.speaker_moods && intelligenceData.sentiment.speaker_moods.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-white/5">
+                                    {intelligenceData.sentiment.speaker_moods.map((sm: any, i: number) => (
+                                        <div key={i} className="text-xs bg-black/40 px-3 py-1.5 rounded-full border border-white/5 flex items-center gap-1.5 shadow-sm text-gray-300">
+                                            <strong className="text-gray-100">{sm.name}:</strong> {sm.mood}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Missed Signals */}
                     <div className="bg-orange-950/20 border border-orange-500/20 p-6 rounded-2xl shadow-lg relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl"></div>
